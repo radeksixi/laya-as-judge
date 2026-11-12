@@ -10,7 +10,7 @@ We welcome contributions of all kinds: bug fixes, new judge rubrics, hardware ba
 
 1. **Fork and clone the repository:**
    ```bash
-   git clone https://github.com/radek-sixi/laya-as-judge.git
+   git clone https://github.com/radeksixi/laya-as-judge.git
    cd laya-as-judge
    ```
 

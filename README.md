@@ -5,7 +5,7 @@
 [![Output Tokens](https://img.shields.io/badge/Output_Tokens-0-orange.svg)](#the-logic-behind-it-architecture--math)
 [![Latency](https://img.shields.io/badge/Latency-7--14ms-success.svg)](#performance--benchmarks)
 [![Cloud Cost](https://img.shields.io/badge/Cloud_Cost-%240.00-gold.svg)](#reasoning-why-its-worth-doing-and-using)
-[![CI](https://github.com/radek-sixi/laya-as-judge/actions/workflows/ci.yml/badge.svg)](https://github.com/radek-sixi/laya-as-judge/actions)
+[![CI](https://github.com/radeksixi/laya-as-judge/actions/workflows/ci.yml/badge.svg)](https://github.com/radeksixi/laya-as-judge/actions)
 
 > **Blazing fast, token-free, calibrated LLM and AI agent evaluation using [Laya](https://huggingface.co/convaiinnovations/laya) typed decision models instead of slow, expensive, and fragile autoregressive "LLM-as-a-Judge".**
 >
@@ -213,7 +213,7 @@ flowchart LR
 
 ```bash
 # Clone the repository
-git clone https://github.com/radek-sixi/laya-as-judge.git
+git clone https://github.com/radeksixi/laya-as-judge.git
 cd laya-as-judge
 
 # Basic installation: API, CLI and the heuristic EmulatorBackend (no model weights)
