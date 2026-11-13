@@ -24,6 +24,7 @@ class JudgementResult:
     decision_type: DecisionType = DecisionType.CHOICE
     raw_answer: Dict[str, Any] = field(default_factory=dict)
     action_probability: Optional[float] = None
+    top1_probability: Optional[float] = None
 
     @property
     def is_high_confidence(self) -> bool:
@@ -35,6 +36,7 @@ class JudgementResult:
             "name": self.name,
             "decision_type": self.decision_type.value,
             "confidence": self.confidence,
+            "top1_probability": self.top1_probability,
             "action_probability": self.action_probability,
             **self._specific_dict(),
         }
@@ -59,6 +61,13 @@ class ScoreResult(JudgementResult):
     legend: Dict[str, str] = field(default_factory=dict)
     level_probabilities: Dict[str, float] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if self.top1_probability is None:
+            if self.level_probabilities:
+                self.top1_probability = float(max(self.level_probabilities.values()))
+            else:
+                self.top1_probability = float(self.confidence)
+
     def _specific_dict(self) -> Dict[str, Any]:
         return {
             "score": self.score,
@@ -78,6 +87,13 @@ class ChoiceResult(JudgementResult):
     choice: str = ""
     probabilities: Dict[str, float] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if self.top1_probability is None:
+            if self.probabilities:
+                self.top1_probability = float(max(self.probabilities.values()))
+            else:
+                self.top1_probability = float(self.confidence)
+
     def _specific_dict(self) -> Dict[str, Any]:
         return {
             "choice": self.choice,
@@ -96,6 +112,10 @@ class NoulResult(JudgementResult):
     holds: bool = False
     prob_true: float = 0.0
     threshold: float = 0.5
+
+    def __post_init__(self) -> None:
+        if self.top1_probability is None:
+            self.top1_probability = float(max(self.prob_true, 1.0 - self.prob_true))
 
     def _specific_dict(self) -> Dict[str, Any]:
         return {
@@ -143,12 +163,28 @@ class EvaluationReport:
         """Helper to get confidence for a specific judgement."""
         return self.judgements[name].confidence
 
+    def get_top1_probability(self, name: str) -> float:
+        """Helper to get Top-1 probability (max_i p_i) for a specific judgement."""
+        j = self.judgements[name]
+        return float(j.top1_probability if j.top1_probability is not None else j.confidence)
+
     @property
     def average_confidence(self) -> float:
-        """Average confidence across all evaluated criteria."""
+        """Average normalized Shannon entropy confidence across all evaluated criteria."""
         if not self.judgements:
             return 0.0
         return sum(j.confidence for j in self.judgements.values()) / len(self.judgements)
+
+    @property
+    def average_top1_probability(self) -> float:
+        """Average Top-1 probability (max_i p_i) across all evaluated criteria."""
+        if not self.judgements:
+            return 0.0
+        vals = [
+            float(j.top1_probability if j.top1_probability is not None else j.confidence)
+            for j in self.judgements.values()
+        ]
+        return sum(vals) / len(vals)
 
     @property
     def passed(self) -> bool:

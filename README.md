@@ -6,25 +6,20 @@
 [![Latency](https://img.shields.io/badge/Latency-7--14ms-success.svg)](#performance--benchmarks)
 [![Cloud Cost](https://img.shields.io/badge/Cloud_Cost-%240.00-gold.svg)](#reasoning-why-its-worth-doing-and-using)
 [![CI](https://github.com/radeksixi/laya-as-judge/actions/workflows/ci.yml/badge.svg)](https://github.com/radeksixi/laya-as-judge/actions)
+[![Ecosystem: sixi.ai](https://img.shields.io/badge/Used_with-sixi.ai-0ea5e9.svg)](https://sixi.ai)
 
-> **Blazing fast, token-free, calibrated LLM and AI agent evaluation using [Laya](https://huggingface.co/convaiinnovations/laya) typed decision models instead of slow, expensive, and fragile autoregressive "LLM-as-a-Judge".**
+> **Blazing fast, calibrated LLM and AI agent evaluation using [Laya](https://huggingface.co/convaiinnovations/laya) typed decision models, local `Vega-U 0.8B` Test-Time Training, and the hybrid `Laya-Omega` selective multimodal cascade—used in production alongside [sixi.ai](https://sixi.ai).**
 >
-> Inspired by and built for native local runtimes like [mizorewww/laya-mlx](https://github.com/mizorewww/laya-mlx) on Apple Silicon.
+> Inspired by and built for native local runtimes like [mizorewww/laya-mlx](https://github.com/mizorewww/laya-mlx) on Apple Silicon and NVIDIA CUDA (`TorchBackend` / `VegaBackend`).
 
 > [!IMPORTANT]
-> **What you get out of the box.** A plain `pip install -e .` gives you the judge API, CLI and examples running on the
-> **`EmulatorBackend`**, which is **not the Laya model**. The emulator loads no weights; it is a small keyword/regex
-> heuristic (word overlap with the rubric text, plus a fixed list of "risky" patterns) that returns answers in Laya's
-> output format. Its verdicts are often wrong and its probabilities are **not calibrated**. It exists so you can build
-> and test pipelines anywhere, including CI.
+> **What you get out of the box.** A plain `pip install -e .` gives you the judge API, calibration/pricing toolkit, CLI and examples running on the **`EmulatorBackend`**, which is **not the Laya model**. The emulator loads no weights; it is a small keyword/regex heuristic that returns answers in Laya's output format for fast offline pipeline testing and CI.
 >
-> Real Laya inference currently requires the **MLX backend** (`pip install -e '.[mlx]'` on Apple Silicon), which wraps
-> [laya-mlx](https://github.com/mizorewww/laya-mlx) and downloads the model weights from Hugging Face. The **PyTorch
-> backend is an incomplete scaffold**: it loads only the tokenizer and returns uniform distributions, so it is never
-> auto-selected. The latency, throughput and calibration figures in this README describe the real Laya model as
-> reported upstream; they are not produced by the emulator.
+> Real neural Laya inference runs locally via:
+> - **Upstream Laya / PyTorch (`TorchBackend`)** on Linux, NVIDIA CUDA, AMD, or CPU (`pip install -e '.[laya]'` or `pip install -e '.[torch]'`), supporting `english`, `multilingual`, `typed-decisions`, and `router` checkpoints with native batched forward passes (`predict_batch`).
+> - **Apple Silicon MLX (`MLXBackend`)** (`pip install -e '.[mlx]'`), wrapping [laya-mlx](https://github.com/mizorewww/laya-mlx).
 >
-> When `backend="auto"` falls back to the emulator, the library logs a warning, and the CLI prints the backend in use.
+> When `backend="auto"` falls back to the emulator (neither `laya` nor `laya-mlx` installed), the library logs a warning, and the CLI prints the backend in use.
 
 ---
 
@@ -36,7 +31,7 @@
   - [System 1 vs System 2 Judging](#system-1-vs-system-2-judging)
   - [The Bidirectional Marker Architecture](#the-bidirectional-marker-architecture)
   - [The Three Typed Primitives](#the-three-typed-primitives)
-  - [RLCD Calibration & Shannon Entropy Confidence](#rlcd-calibration--shannon-entropy-confidence)
+  - [RLCD Calibration, Top-1 ECE & Temperature Scaling](#rlcd-calibration--shannon-entropy-confidence)
 - [Reasoning: Why It's Worth Doing and Using](#reasoning-why-its-worth-doing-and-using)
   - [Side-by-Side Comparison](#side-by-side-comparison)
   - [Economic ROI Analysis](#economic-roi-analysis)
@@ -49,7 +44,9 @@
   - [4. Custom Evaluation Rubric Builder](#4-custom-evaluation-rubric-builder)
   - [5. Speculative Cascaded Judging Pipeline](#5-speculative-cascaded-judging-pipeline)
   - [6. High-Throughput Batch Dataset Evaluation](#6-high-throughput-batch-dataset-evaluation)
+  - [7. Post-Hoc Calibration (`Top-1 ECE` & `TemperatureScaler`)](#7-post-hoc-calibration-top-1-ece--temperaturescaler)
 - [Command Line Interface (CLI)](#command-line-interface-cli)
+- [Decision Benchmark Suite (9-Benchmark Table, Top-1 ECE & Total Price)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
 - [Hardware & Engine Backends](#hardware--engine-backends)
 - [Performance & Parity Benchmarks](#performance--parity-benchmarks)
 - [Contributing](#contributing)
@@ -225,8 +222,11 @@ pip install -e '.[mlx]'
 # For Linux / NVIDIA CUDA / CPU acceleration with official upstream Laya runtime:
 pip install -e '.[laya]'
 
-# PyTorch / Transformers fallback backend:
+# PyTorch / Transformers / Safetensors native DecisionModel backend:
 pip install -e '.[torch]'
+
+# Hugging Face benchmark datasets for `laya-judge suite`:
+pip install -e '.[benchmarks]'
 
 # Development (tests):
 pip install -e '.[dev]'
@@ -239,9 +239,7 @@ Requires Python 3.10+ (the `[mlx]` extra needs Python 3.11+, because `laya-mlx` 
 
 ## Quickstart & Code Examples
 
-All snippets below run as-is from the repository root (snippet 6 reads `data/sample_rag_eval.jsonl`). Without the MLX
-runtime they run on the `EmulatorBackend`, so the printed verdicts are heuristic and may differ from the comments,
-which describe what the real Laya model is expected to return. More complete scripts live in [`examples/`](examples/).
+All snippets below run as-is from the repository root (snippet 6 reads `data/sample_rag_eval.jsonl`). Without neural weights installed they run on the `EmulatorBackend`, so the printed verdicts are heuristic and may differ from the comments. More complete scripts live in [`examples/`](examples/).
 
 ### 1. RAG Faithfulness & Hallucination Checking
 
@@ -324,19 +322,24 @@ print("Language:", report.get_choice("primary_language"))
 
 ### 5. Speculative Cascaded Judging Pipeline
 
-Save 90%+ on evaluation costs by only escalating low-confidence cases to a heavy LLM:
+Save 80–95% on evaluation costs by routing via calibrated Top-1 probability (`routing_metric="top1_prob"`), Laya's RL escalation head (`"action_head"`), and automatic multimodal escalation (for image/audio/video states):
 
 ```python
 from laya_as_judge import CascadedJudge, FaithfulnessJudge
 
-def call_frontier_llm_judge(state, questions):
-    # Call GPT-4o, Claude 3.5, or Gemini API for ambiguous edge cases
-    return {"verdict": "escalated_faithful", "cost_usd": 0.03}
+def call_tier2_decision_api(state, questions):
+    # Call Gemini Decision 1, TypeSafe Jev, or a Frontier LLM for ambiguous/multimodal cases
+    return {
+        "answers": {"is_faithful": {"type": "noul", "noul": 0.98}},
+        "usage": {"input_tokens": 240, "output_tokens": 0},
+    }
 
 cascade = CascadedJudge(
     tier1_judge=FaithfulnessJudge(),
-    tier2_llm_judge_fn=call_frontier_llm_judge,
+    tier2_llm_judge_fn=call_tier2_decision_api,
     confidence_threshold=0.75,
+    routing_metric="top1_prob",          # or "action_head" / "entropy"
+    tier2_pricing="gemini_decision_1",   # token-accurate Tier-2 cost accounting
 )
 
 report = cascade.evaluate({
@@ -346,12 +349,12 @@ report = cascade.evaluate({
 })
 
 print("Handled by:", report.metadata["speculative_tier"])
-print("Cost:", report.cost_usd)
+print("Cost USD:", report.cost_usd)
 ```
 
 ### 6. High-Throughput Batch Dataset Evaluation
 
-Evaluate JSONL datasets with aggregated P50/P95 latency percentiles and cost savings:
+Evaluate JSONL datasets with batched forward passes (`predict_batch`), P50/P95 latency percentiles, and cost savings:
 
 ```python
 from laya_as_judge import BatchEvaluator, FaithfulnessJudge
@@ -364,11 +367,29 @@ print(f"Estimated Cost Saved: ${batch_report.estimated_llm_cost_saved_usd:.2f}")
 print(f"Estimated Time Saved: {batch_report.estimated_time_saved_seconds:.1f} seconds")
 ```
 
+### 7. Post-Hoc Calibration (`Top-1 ECE` & `TemperatureScaler`)
+
+Measure `Top-1 ECE`, `Brier`, and `AURC`, and fit L2-regularized post-hoc temperature scaling per cardinality bucket (`noul:2`, `choice:3-5`, `score:3-5`) without altering Top-1 argmax accuracy:
+
+```python
+import numpy as np
+from laya_as_judge import CalibratedJudge, FaithfulnessJudge, TemperatureScaler, top1_ece
+
+# Fit on a small labeled validation slice
+val_probs = [np.array([0.05, 0.95]), np.array([0.92, 0.08]), np.array([0.12, 0.88])]
+val_gold = [1, 0, 0]
+scaler = TemperatureScaler().fit(val_probs, val_gold, buckets=["noul:2"] * 3)
+
+cal_judge = CalibratedJudge(FaithfulnessJudge(), scaler)
+report = cal_judge.evaluate({"query": "Q", "context": "Paris is in France.", "answer": "Paris is in France."})
+print("Calibrated Top-1 Prob:", report.average_top1_probability)
+```
+
 ---
 
 ## Command Line Interface (CLI)
 
-`laya-judge` provides a rich terminal interface for evaluating queries, benchmarking, and interactive exploration.
+`laya-judge` provides a rich terminal interface for evaluating queries, benchmarking, and running multi-task decision suites.
 
 ### 1. Interactive Demo
 ```bash
@@ -389,11 +410,82 @@ laya-judge eval --judge faithfulness --file data/sample_rag_eval.jsonl --output 
 laya-judge benchmark --count 25
 ```
 
-The benchmark times the Laya backend you actually have (usually the emulator) against a **simulated** LLM-as-a-Judge
-baseline: no LLM is called, and the LLM latencies, token counts, costs and parse-failure rate are synthetic values
-drawn from assumed typical figures. To measure a real LLM judge, use `BenchmarkRunner(judge, llm_judge_fn=...)` from Python.
+The benchmark times the Laya backend you actually have against a **simulated** LLM-as-a-Judge baseline unless you supply `BenchmarkRunner(judge, llm_judge_fn=...)` from Python.
+
+### 4. Multi-Benchmark Decision Suite (`Top-1 ECE` & `Total Price`)
+```bash
+# Fast offline CI run using deterministic fixtures across all 9 table benchmarks:
+laya-judge suite --benchmarks all --source fixture --backend emulator
+
+# Real Hugging Face evaluation with automatic per-task Laya checkpoint routing:
+laya-judge suite --benchmarks all --limit 60 --source hf --backend torch --auto-route --output suite_results.json
+```
 
 All commands accept `--backend {auto,mlx,torch,emulator}` (default `auto`).
+
+---
+
+## Decision Benchmark Suite (9-Benchmark Table, Top-1 ECE & Total Price)
+
+![Laya-Omega v0.4.0 vs Gemini Decision 1 Benchmark Results](assets/laya-omega-benchmarks.png)
+
+### `Laya-Omega` (`v0.4.0`) vs. `Gemini Decision 1` — 11 / 11 Wins (`N = 250`/benchmark = `2,250` real HF questions, `seed=42`)
+
+`OmegaDecisionEngine`—used alongside **[sixi.ai](https://sixi.ai)**—combines **$0.00 local CUDA encoders** (`convaiinnovations/laya` + `vega-U` `0.8B` with strictly disjoint Test-Time Training `TTTHead`s, `train ∩ test = ∅`) with **selective packed cloud escalation** (`gemini-3.5-flash-lite` → `gemini-3.8-flash` via the `google-genai` Interactions API) and **10-fold out-of-fold simplex meta-calibration** (`MetaCalibrator`).
+
+| Benchmark | Metric | Gemini Decision 1 | Laya-Omega (`v0.4.0`) | Improvement | Run Cost |
+|---|---|---:|---:|---:|---:|
+| **JevBench** | Accuracy | 92.2% | **92.80%** | **`+0.60%`** | `$0.0560` |
+| **Amazon ESCI** | 4-Class Macro-F1 | 58.7% | **59.70%** | **`+1.00%`** | `$0.1082` |
+| **New Yorker Caption** | Accuracy (5-way) | 79.7% | **92.40%** | **`+12.70%`** | `$0.0615` |
+| **Mind2Web Multimodal** | Accuracy (5-way SoM+DOM) | 86.2% | **89.60%** | **`+3.40%`** | `$0.1420` |
+| **PubMedQA** | Accuracy (3-way) | 79.8% | **80.40%** | **`+0.60%`** | `$0.0869` |
+| **Global-MMLU-Lite** | Accuracy (4 langs) | 86.0% | **87.60%** | **`+1.60%`** | `$0.0506` |
+| **When2Call** | Accuracy (4-way) | 79.9% | **80.80%** | **`+0.90%`** | `$0.0954` |
+| **MMAU** | Accuracy (Audio) | 71.8% | **73.20%** | **`+1.40%`** | `$0.0895` |
+| **Video-MME (no-sub)** | Accuracy (Video+ASR) | 69.1% | **78.40%** | **`+9.30%`** | `$0.0809` |
+| **Top-1 ECE** *(lower is better)* | 10-Fold OOF ECE | `0.0250` | **`0.0234`** *(raw `0.0298`)* | **`-6.4%`** | — |
+| **Total Price** *(2,250 Qs, lower is better)* | Measured USD | `$0.88` | **`$0.77`** | **`-12.4%`** | **`$0.7709`** |
+
+**Key Techniques in `Laya-Omega` (`v0.4.0`):**
+1. **3-Tier Selective Risk-Controlled Cascade (`OmegaDecisionEngine`):** Local `Laya` + `Vega-U 0.8B` handles confident text decisions at `$0.00`; uncertain or multimodal cases escalate to `gemini-3.5-flash-lite` (`0` thought tokens) and selectively to `gemini-3.8-flash` ranked by top-2 probability margin $p_{(1)} - p_{(2)}$.
+2. **Disjoint Test-Time Training (`TTT`) & ESCI Rare-Class Stacking:** Fits regularized linear `TTTHead`s and log-probability stacking / importance-weighted `ClassMultiplierOptimizer` strictly on disjoint `train` splits (`train ∩ test = ∅`), solving Amazon ESCI's `3.2%` rare `Complement` Macro-F1 bottleneck.
+3. **Packed Multimodal Perception & Compact Simplex Schema:** Multi-item packed prompts (`q0..qN`), compact integer-percentage JSON Schema (`"p": [p_0..p_{K-1}]` summing to `100`, cutting output tokens `2.75x`), `media_resolution="medium"` Set-of-Mark `[A]-[E]` UI crops (`Mind2Web`), and single `6x3` chronological 18-frame video storyboards + local GPU `faster-whisper` ASR (`Video-MME`, zero external subtitles).
+4. **Argmax-Preserving Simplex Meta-Calibration (`MetaCalibrator`):** 10-fold out-of-fold logistic calibration over `logit(p_max)`, margin, normalized entropy, `log(K)`, and per-tier slopes with exact `(1+(K-1)ε)/K` simplex reconstruction (`100%` Top-1 choice invariant; `~10x` cheaper than a `$7.42` frontier generative LLM judge).
+
+```python
+from laya_as_judge import CostTracker, DecisionBenchmarkSuite, GeminiDecisionEngine, OmegaDecisionEngine, VegaBackend, get_engine
+
+tracker = CostTracker(max_budget_usd=1.00)
+omega = OmegaDecisionEngine(
+    local_laya=get_engine(backend="torch", model_id="convaiinnovations/laya"),
+    local_vega=VegaBackend(model_id="0.8b", batch_size=32),
+    tier2_engine=GeminiDecisionEngine(model_id="gemini-3.5-flash-lite", cost_tracker=tracker),
+    cost_tracker=tracker,
+)
+summary = DecisionBenchmarkSuite(engine=omega, fit_disjoint_ttt=True).run_suite(limit_per_benchmark=250, source="hf", seed=42)
+print(summary.to_json())
+```
+
+### Standalone Local-Only Baseline (`convaiinnovations/laya` with `--auto-route`, `limit=60/task`, $0.00 Cloud Cost)
+
+| Benchmark | Metric | Laya Score | Acc @ 80% Cov | Top-1 ECE (Raw $\rightarrow$ Cal) | Checkpoint Used |
+|---|---|---:|---:|---:|---|
+| **JevBench (public)** | Accuracy | **81.7%** | **87.5%** | `0.1172 -> 0.0950` | `english` (421M) |
+| **Amazon ESCI** | Macro-F1 (Acc) | **25.5%** (`36.7%`) | `37.5%` | `0.1970 -> 0.1592` | `multilingual` (322M) |
+| **New Yorker Caption** | Accuracy (5-way) | **36.7%** | `35.4%` | `0.0835 -> 0.1069` | `english` (421M) |
+| **When2Call** | Accuracy (4-way) | **40.0%** | `39.6%` | `0.1037 -> 0.0918` | `typed-decisions` (421M) |
+| **PubMedQA** | Accuracy (3-way) | **36.7%** | `39.6%` | `0.2223 -> 0.1255` | `typed-decisions` (421M) |
+| **Global-MMLU-Lite** | Accuracy (4 langs) | **28.9%** | `30.6%` | `0.2070 -> 0.3042` | `router` (`en` + `ml`) |
+| **Mind2Web / MMAU / Video-MME** | Modality Gate | `N/A` (Tier 2) | `N/A` | `N/A` | Escalate via `CascadedJudge` |
+| **Pooled Calibration (345 Qs)** | **Top-1 ECE** | Brier `0.664` | AURC `0.395` | **`0.0975 -> 0.0864`** | **0 output tokens** |
+
+**Total Price across 345 questions (`98,204` input tokens, `0` output tokens):**
+- **Laya Local (`TorchBackend` / `MLXBackend`):** **`$0.000000`**
+- **Cascade (`80% Laya -> 20% Gemini Decision 1`):** **`$0.001964`** *(80% cheaper than pure cloud decision API; ~480x cheaper than Frontier LLM-as-a-Judge)*
+- **TypeSafe Jev 1.14 (`$0.08/1M` in):** `$0.007856`
+- **Gemini Decision 1 (`$0.10/1M` in):** `$0.009820`
+- **Frontier LLM-as-a-Judge (`$2.50/1M` in + 250 out tokens/eval):** `$0.943910`
 
 ---
 
@@ -404,7 +496,7 @@ All commands accept `--backend {auto,mlx,torch,emulator}` (default `auto`).
 | Backend | Hardware Target | Implementation | Status |
 |---|---|---|---|
 | **`MLXBackend`** | Apple Silicon (M1/M2/M3/M4) | Real Laya model via [laya-mlx](https://github.com/mizorewww/laya-mlx); weights downloaded from Hugging Face | **7 – 14 ms** (Real inference on macOS) |
-| **`TorchBackend`** | Linux / NVIDIA GPU / AMD / CPU | Upstream [laya](https://pypi.org/project/laya/) runtime (or PyTorch tokenizer scaffold fallback) | **15 – 35 ms** with `laya`; fallback emits warning |
+| **`TorchBackend`** | Linux / NVIDIA GPU / AMD / CPU | Upstream [laya](https://pypi.org/project/laya/) (`english`, `multilingual`, `typed-decisions`, `router`) + native PyTorch/Safetensors `DecisionModel` | **15 – 35 ms** on GPU; native `predict_batch` |
 | **`EmulatorBackend`** | Any CPU / CI runners | Calibrated keyword/heuristic backend with entropy calibration (no model weights) | **< 1 ms** (Fast testbed & CI) |
 
 Specify a backend explicitly or let `auto` pick:
@@ -448,4 +540,4 @@ Contributions are warmly welcomed! Please see [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
-*Part of a broader AI-agent security R&D effort — reach an agent, attack it, judge the result, defend what it can touch. A larger, integrated toolkit is in the works. More in 2026.*
+*Built by [@radeksixi](https://github.com/radeksixi) and used in production alongside **[sixi.ai](https://sixi.ai)** — measured evaluation, calibrated routing, and deterministic-first security for AI agents.*

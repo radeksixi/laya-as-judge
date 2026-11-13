@@ -14,6 +14,7 @@ from rich.table import Table
 from . import __version__
 from .batch import BatchEvaluator
 from .benchmark import BenchmarkRunner
+from .eval_suite import BENCHMARK_SPECS, DecisionBenchmarkSuite
 from .judges import (
     AgentTrajectoryJudge,
     AnswerRelevanceJudge,
@@ -250,6 +251,156 @@ def benchmark(count: int, backend: str):
             "[yellow]Note: Laya timings above come from the heuristic EmulatorBackend, not the Laya "
             "model. Real model latency depends on your hardware and runtime.[/yellow]"
         )
+
+
+@main.command()
+@click.option(
+    "--benchmarks",
+    "-B",
+    default="jevbench,amazon_esci,when2call,pubmedqa,global_mmlu_lite,new_yorker_caption",
+    help="Comma-separated list of benchmarks (or 'all' for full 9-benchmark table).",
+)
+@click.option("--limit", "-n", default=50, help="Max samples/questions per benchmark.")
+@click.option(
+    "--source",
+    type=click.Choice(["hf", "fixture"]),
+    default="hf",
+    help="Dataset source: Hugging Face ('hf') or built-in offline CI fixtures ('fixture').",
+)
+@click.option(
+    "--backend",
+    "-b",
+    default="auto",
+    help="Decision engine backend ('auto', 'omega', 'vega', 'gemini', 'torch', 'mlx', 'emulator').",
+)
+@click.option("--model-id", default=None, help="Optional checkpoint or alias (e.g. 'english', 'multilingual', 'typed-decisions', 'router').")
+@click.option("--device", default=None, help="Optional Torch device override (e.g. 'cpu', 'cuda').")
+@click.option(
+    "--auto-route/--no-auto-route",
+    default=False,
+    help="Automatically select the recommended Laya checkpoint per benchmark when --model-id is omitted.",
+)
+@click.option("--calibration-split", default=0.25, type=float, help="Validation fraction for TemperatureScaler (0 to disable).")
+@click.option("--output", "-o", default=None, type=click.Path(), help="Optional JSON file to save full suite report.")
+def suite(
+    benchmarks: str,
+    limit: int,
+    source: str,
+    backend: str,
+    model_id: Optional[str],
+    device: Optional[str],
+    auto_route: bool,
+    calibration_split: float,
+    output: Optional[str],
+):
+    """Run the Decision Benchmark Suite (Accuracy, Macro-F1, Top-1 ECE & Total Price)."""
+    if benchmarks.strip().lower() == "all":
+        b_list = list(DecisionBenchmarkSuite.ALL_TABLE_BENCHMARKS)
+    else:
+        b_list = [x.strip() for x in benchmarks.split(",") if x.strip()]
+
+    engine_kwargs = {}
+    if device is not None:
+        engine_kwargs["device"] = device
+
+    runner = DecisionBenchmarkSuite(
+        backend=backend,
+        model_id=model_id,
+        auto_route_checkpoints=auto_route,
+        **engine_kwargs,
+    )
+    model_desc = "auto-routed checkpoints" if runner.auto_route_checkpoints else runner.engine.model_id
+    console.print(
+        Panel.fit(
+            f"[bold cyan]Decision Benchmark Suite[/bold cyan] — Backend: [bold white]{type(runner.engine).__name__}[/bold white] "
+            f"([yellow]{model_desc}[/yellow])\n"
+            f"[dim]Benchmarks: {', '.join(b_list)} | Limit: {limit}/task | Source: {source}[/dim]"
+        )
+    )
+
+    with console.status("[bold green]Running typed decision benchmarks...[/bold green]") as status:
+        def _on_done(res, idx: int, total: int) -> None:
+            if res.status == "completed":
+                sc = (res.primary_score or 0.0) * 100.0
+                console.print(
+                    f"  [green]✓[/green] [{idx}/{total}] [bold]{res.display_name}[/bold]: "
+                    f"{res.primary_metric_name}={sc:.1f}% | Top-1 ECE={(res.top1_ece or 0.0):.4f} "
+                    f"({res.sample_count} samples)"
+                )
+            else:
+                console.print(
+                    f"  [yellow]–[/yellow] [{idx}/{total}] [bold]{res.display_name}[/bold]: {res.status}"
+                )
+            status.update(f"[bold green]Completed {idx}/{total} benchmarks...[/bold green]")
+
+        summary = runner.run_suite(
+            benchmarks=b_list,
+            limit_per_benchmark=limit,
+            source=source,
+            calibration_split=calibration_split,
+            progress_callback=_on_done,
+        )
+
+    table = Table(title="Benchmark Evaluation Table (Quality, Calibration & Latency)", show_lines=True)
+    table.add_column("Benchmark", style="bold cyan")
+    table.add_column("Metric", style="dim")
+    table.add_column("Score", justify="right", style="bold green")
+    table.add_column("Acc @ 80% Cov", justify="right", style="yellow")
+    table.add_column("Top-1 ECE (Raw -> Cal)", justify="right", style="magenta")
+    table.add_column("P50 ms", justify="right", style="white")
+    table.add_column("Samples", justify="right", style="dim")
+
+    for r in summary.results:
+        if r.status != "completed":
+            table.add_row(r.display_name, r.primary_metric_name, "N/A", "N/A", "N/A", "-", f"0 ({r.status})")
+            continue
+        score_str = f"{(r.primary_score or 0.0) * 100:.1f}%"
+        cov_str = f"{(r.accuracy_at_80pct_coverage or 0.0) * 100:.1f}%"
+        if r.calibrated_top1_ece is not None:
+            ece_str = f"{r.top1_ece:.4f} -> {r.calibrated_top1_ece:.4f}"
+        else:
+            ece_str = f"{(r.top1_ece or 0.0):.4f}"
+        table.add_row(
+            r.display_name,
+            r.primary_metric_name,
+            score_str,
+            cov_str,
+            ece_str,
+            f"{r.p50_latency_ms:.1f}",
+            str(r.sample_count),
+        )
+
+    # Bottom rows: Pooled Calibration & Total Price
+    pooled_ece_str = (
+        f"{summary.pooled_top1_ece:.4f} -> {summary.pooled_calibrated_top1_ece:.4f}"
+        if summary.pooled_calibrated_top1_ece is not None
+        else f"{summary.pooled_top1_ece:.4f}"
+    )
+    table.add_row(
+        "[bold white]Pooled Calibration (Bottom Row)[/bold white]",
+        "Top-1 ECE (lower=better)",
+        f"Brier {summary.pooled_brier:.3f}",
+        f"AURC {summary.pooled_aurc:.3f}",
+        f"[bold magenta]{pooled_ece_str}[/bold magenta]",
+        "-",
+        str(summary.total_questions_evaluated),
+    )
+    console.print(table)
+
+    price_table = Table(
+        title=f"Total Price Comparison ({summary.total_input_tokens:,} input tokens, {summary.total_output_tokens:,} output tokens)"
+    )
+    price_table.add_column("Execution / API Profile", style="cyan")
+    price_table.add_column("Total Price (USD)", justify="right", style="bold green")
+    for k, v in summary.total_price_usd.items():
+        price_table.add_row(k, f"${v:.6f}")
+    console.print(price_table)
+
+    if output:
+        out_p = Path(output).expanduser()
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(summary.to_json())
+        console.print(f"[bold green]Saved suite summary JSON to {out_p}[/bold green]")
 
 
 @main.command()

@@ -50,6 +50,8 @@ class BatchEvaluator:
         items: List[Union[str, Dict[str, Any], List[Any]]],
         state_extractor: Optional[Callable[[Any], Union[str, Dict[str, Any]]]] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None,
+        batch_size: int = 32,
+        **predict_kwargs: Any,
     ) -> BatchEvaluationReport:
         """Evaluate a list of items and generate an aggregated BatchEvaluationReport."""
         reports: List[EvaluationReport] = []
@@ -59,15 +61,20 @@ class BatchEvaluator:
         extractor = state_extractor or _default_state_adapter
 
         total_items = len(items)
-        for i, item in enumerate(items):
-            state = extractor(item)
-            report = self.judge.evaluate(state)
-            reports.append(report)
-            latencies.append(report.latency_ms)
-            total_input_tokens += report.input_tokens
-
-            if progress_callback:
-                progress_callback(i + 1, total_items)
+        step = max(1, batch_size)
+        for start in range(0, total_items, step):
+            chunk_items = items[start : start + step]
+            states = [extractor(item) for item in chunk_items]
+            if step == 1:
+                chunk_reports = [self.judge.evaluate(states[0], **predict_kwargs)]
+            else:
+                chunk_reports = self.judge.evaluate_batch(states, **predict_kwargs)
+            for idx, report in enumerate(chunk_reports):
+                reports.append(report)
+                latencies.append(report.latency_ms)
+                total_input_tokens += report.input_tokens
+                if progress_callback:
+                    progress_callback(start + idx + 1, total_items)
 
         total_lat_ms = sum(latencies)
         avg_lat_ms = total_lat_ms / max(1, total_items)

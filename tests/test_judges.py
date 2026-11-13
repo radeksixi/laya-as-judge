@@ -13,7 +13,7 @@ from laya_as_judge.types import DecisionType
 
 
 def test_faithfulness_judge():
-    judge = FaithfulnessJudge()
+    judge = FaithfulnessJudge(backend="emulator")
     report = judge.evaluate_rag(
         query="What is H2O?",
         context="H2O is water.",
@@ -27,7 +27,7 @@ def test_faithfulness_judge():
 
 
 def test_relevance_judge():
-    judge = AnswerRelevanceJudge()
+    judge = AnswerRelevanceJudge(backend="emulator")
     report = judge.evaluate_response(
         query="What time is it?",
         answer="It is 3 PM.",
@@ -37,7 +37,7 @@ def test_relevance_judge():
 
 
 def test_instruction_judge():
-    judge = InstructionAdherenceJudge()
+    judge = InstructionAdherenceJudge(backend="emulator")
     report = judge.evaluate_adherence(
         instructions="Respond in 1 sentence without using commas.",
         response="This is a sentence.",
@@ -47,7 +47,7 @@ def test_instruction_judge():
 
 
 def test_safety_guard_judge():
-    judge = SafetyGuardJudge()
+    judge = SafetyGuardJudge(backend="emulator")
     report = judge.inspect("Hello, can you help me write an email?", role="prompt")
     assert "is_safe" in report.judgements
     assert "jailbreak_attempt" in report.judgements
@@ -56,7 +56,7 @@ def test_safety_guard_judge():
 
 
 def test_pairwise_judge():
-    judge = PairwiseComparisonJudge()
+    judge = PairwiseComparisonJudge(backend="emulator")
     report = judge.compare(
         prompt="Write a hello world program in python.",
         response_a="print('Hello, world!')",
@@ -68,7 +68,7 @@ def test_pairwise_judge():
 
 
 def test_agent_eval_judge():
-    judge = AgentTrajectoryJudge()
+    judge = AgentTrajectoryJudge(backend="emulator")
     report = judge.evaluate_step(
         goal="Find the price of BTC",
         history=[{"role": "user", "content": "Find BTC price"}],
@@ -85,7 +85,7 @@ def test_custom_judge_builder():
         .add_noul("is_clean", "Is the code readable?")
         .add_score("maintainability", "Rate maintainability", ["poor", "fair", "good", "great"])
         .add_choice("language", "Detect language", ["python", "rust", "go", "other"])
-        .build()
+        .build(backend="emulator")
     )
 
     report = judge.evaluate("def add(a, b): return a + b")

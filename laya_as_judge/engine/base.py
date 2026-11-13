@@ -14,10 +14,14 @@ QTYPE_NAMES = {v: k for k, v in QTYPES.items()}
 
 
 def serialize_state(state: Union[str, dict, list]) -> str:
-    """Serialize any state object (string, dict, list) to text for decision model."""
+    """Serialize any state object (string, dict, list) compactly for decision model.
+
+    Uses compact JSON separators without indentation so structured states and tool
+    schemas do not waste Laya's encoder token budget on whitespace.
+    """
     if isinstance(state, str):
         return state
-    return json.dumps(state, ensure_ascii=False, indent=2)
+    return json.dumps(state, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
 def render_criterion(value: Any) -> str:
@@ -65,6 +69,14 @@ def confidence_from_probs(probs: np.ndarray, num_options: int) -> float:
     return float(np.clip(conf, 0.0, 1.0))
 
 
+def top1_prob_from_probs(probs: np.ndarray, num_options: int) -> float:
+    """Return Top-1 probability max_i p_i in [0.0, 1.0], aligned with Top-1 ECE."""
+    if num_options < 1 or len(probs) == 0:
+        return 1.0
+    p = probs[:num_options]
+    return float(np.clip(np.max(p), 0.0, 1.0))
+
+
 def validate_question_spec(name: str, spec: Dict[str, Any]) -> Dict[str, Any]:
     """Validate and normalize a typed decision question definition."""
     if not isinstance(spec, dict):
@@ -101,6 +113,8 @@ def validate_question_spec(name: str, spec: Dict[str, Any]) -> Dict[str, Any]:
 class BaseDecisionEngine(abc.ABC):
     """Abstract base class for Laya decision execution backends."""
 
+    supports_multimodal: bool = False
+
     def __init__(self, model_id: str = "convaiinnovations/laya"):
         self.model_id = model_id
 
@@ -126,3 +140,18 @@ class BaseDecisionEngine(abc.ABC):
             }
         """
         pass
+
+    def predict_batch(
+        self,
+        states: List[Union[str, Dict[str, Any], List[Any]]],
+        questions: Dict[str, Dict[str, Any]],
+        **kwargs: Any,
+    ) -> List[Dict[str, Any]]:
+        """Execute typed decision questions over a batch of states.
+
+        Backends with native hardware batching (e.g. TorchBackend, MLXBackend)
+        override this method for higher throughput.
+        """
+        if kwargs:
+            return [self.predict(s, questions, **kwargs) for s in states]
+        return [self.predict(s, questions) for s in states]

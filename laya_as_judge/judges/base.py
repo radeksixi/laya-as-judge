@@ -5,7 +5,9 @@ from __future__ import annotations
 import abc
 from typing import Any, Dict, List, Optional, Union
 
-from ..engine import BaseDecisionEngine, get_engine
+import numpy as np
+
+from ..engine import BaseDecisionEngine, confidence_from_probs, get_engine
 from ..types import (
     ChoiceResult,
     DecisionType,
@@ -41,18 +43,39 @@ class BaseJudge(abc.ABC):
         self,
         state: Union[str, Dict[str, Any], List[Any]],
         metadata: Optional[Dict[str, Any]] = None,
+        **predict_kwargs: Any,
     ) -> EvaluationReport:
         """Run all typed evaluation questions on the provided state.
 
         Args:
             state: The state / context / prompt to evaluate.
             metadata: Optional additional metadata to store in report.
+            **predict_kwargs: Optional engine overrides (e.g. max_len, head_max_len).
 
         Returns:
             EvaluationReport containing typed results for every question.
         """
-        raw_result = self.engine.predict(state, self.questions)
+        if predict_kwargs:
+            raw_result = self.engine.predict(state, self.questions, **predict_kwargs)
+        else:
+            raw_result = self.engine.predict(state, self.questions)
         return self._format_report(state, raw_result, metadata or {})
+
+    def evaluate_batch(
+        self,
+        states: List[Union[str, Dict[str, Any], List[Any]]],
+        metadatas: Optional[List[Dict[str, Any]]] = None,
+        **predict_kwargs: Any,
+    ) -> List[EvaluationReport]:
+        """Run all typed evaluation questions over a batch of states."""
+        if not states:
+            return []
+        raw_results = self.engine.predict_batch(states, self.questions, **predict_kwargs)
+        reports: List[EvaluationReport] = []
+        for idx, (state, raw_res) in enumerate(zip(states, raw_results)):
+            meta = dict(metadatas[idx]) if metadatas and idx < len(metadatas) else {}
+            reports.append(self._format_report(state, raw_res, meta))
+        return reports
 
     def _format_report(
         self,
@@ -70,36 +93,77 @@ class BaseJudge(abc.ABC):
                 continue
 
             qtype = qdef["type"]
-            conf = float(ans.get("confidence", 0.5))
             act_prob = ans.get("action", {}).get("act_probability")
+            if act_prob is None:
+                act_prob = ans.get("rl_agent", {}).get("act_probability")
+            if act_prob is not None:
+                act_prob = float(act_prob)
 
             if qtype == "choice":
+                probs_dict = ans.get("probabilities", {})
+                if "confidence" in ans:
+                    conf = float(ans["confidence"])
+                elif probs_dict:
+                    p_arr = np.array(list(probs_dict.values()), dtype=np.float32)
+                    conf = confidence_from_probs(p_arr, len(p_arr))
+                else:
+                    conf = 0.5
+                top1 = float(
+                    ans["answer_confidence"]
+                    if "answer_confidence" in ans
+                    else (max(probs_dict.values()) if probs_dict else conf)
+                )
                 judgements[qid] = ChoiceResult(
                     name=qid,
                     decision_type=DecisionType.CHOICE,
                     confidence=conf,
+                    top1_probability=top1,
                     choice=ans.get("choice", ""),
-                    probabilities=ans.get("probabilities", {}),
+                    probabilities=probs_dict,
                     action_probability=act_prob,
                     raw_answer=ans,
                 )
             elif qtype == "score":
+                probs_dict = ans.get("probabilities", {})
+                if "confidence" in ans:
+                    conf = float(ans["confidence"])
+                elif probs_dict:
+                    p_arr = np.array(list(probs_dict.values()), dtype=np.float32)
+                    conf = confidence_from_probs(p_arr, len(p_arr))
+                else:
+                    conf = 0.5
+                top1 = float(
+                    ans["answer_confidence"]
+                    if "answer_confidence" in ans
+                    else (max(probs_dict.values()) if probs_dict else conf)
+                )
                 judgements[qid] = ScoreResult(
                     name=qid,
                     decision_type=DecisionType.SCORE,
                     confidence=conf,
+                    top1_probability=top1,
                     score=float(ans.get("score", 0.0)),
                     legend=ans.get("legend", {}),
-                    level_probabilities=ans.get("probabilities", {}),
+                    level_probabilities=probs_dict,
                     action_probability=act_prob,
                     raw_answer=ans,
                 )
             elif qtype == "noul":
                 prob_true = float(ans.get("noul", 0.5))
+                if "confidence" in ans:
+                    conf = float(ans["confidence"])
+                else:
+                    # Upstream Laya returns {"type": "noul", "noul": p_true} without "confidence"
+                    conf = round(
+                        confidence_from_probs(np.array([1.0 - prob_true, prob_true], dtype=np.float32), 2),
+                        4,
+                    )
+                top1 = float(max(prob_true, 1.0 - prob_true))
                 judgements[qid] = NoulResult(
                     name=qid,
                     decision_type=DecisionType.NOUL,
                     confidence=conf,
+                    top1_probability=top1,
                     holds=(prob_true >= 0.5),
                     prob_true=prob_true,
                     threshold=0.5,

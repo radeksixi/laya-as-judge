@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "laya-as-judge"
-version = "0.2.0"
-description = "Fast, calibrated, token-free LLM & AI agent evaluation using Laya typed decision models instead of slow and expensive LLM-as-a-Judge"
+version = "0.4.0"
+description = "Calibrated, hybrid local + cloud decision evaluation engine (Laya-Omega) used with sixi.ai — beating frontier LLM-as-a-Judge & Gemini Decision 1 across text, vision, audio, and video"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [
-    { name = "Laya-as-Judge Contributors" }
+    { name = "radeksixi" }
 ]
 keywords = [
     "llm-as-a-judge",
@@ -57,8 +57,17 @@ torch = [
     "safetensors>=0.4.0",
     "huggingface-hub>=0.20.0",
 ]
+benchmarks = [
+    "datasets>=2.18.0",
+    "huggingface-hub>=0.20.0",
+]
+omega = [
+    "google-genai>=1.60.0",
+    "Pillow>=10.0.0",
+    "scikit-learn>=1.3.0",
+]
 all = [
-    "laya-as-judge[mlx,torch,laya]",
+    "laya-as-judge[mlx,torch,laya,benchmarks,omega]",
 ]
 dev = [
     "pytest>=7.0.0",
@@ -71,6 +80,8 @@ laya-judge = "laya_as_judge.cli:main"
 [project.urls]
 Homepage = "https://github.com/radeksixi/laya-as-judge"
 Repository = "https://github.com/radeksixi/laya-as-judge"
+"Sixi.ai" = "https://sixi.ai"
+"Blog" = "https://radeksixi.github.io"
 "Bug Tracker" = "https://github.com/radeksixi/laya-as-judge/issues"
 "Laya PyPI Package" = "https://pypi.org/project/laya/"
 "Laya MLX Runtime" = "https://github.com/mizorewww/laya-mlx"

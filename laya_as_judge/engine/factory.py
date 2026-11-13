@@ -36,6 +36,35 @@ def get_engine(
         mid = model_id or "aac6fef/laya-mlx"
         return MLXBackend(model_id=mid, **kwargs)
 
+    if backend in ("vega", "vegaml", "vega-u"):
+        from .vega_backend import VegaBackend
+        mid = model_id or "0.8b"
+        return VegaBackend(model_id=mid, **kwargs)
+
+    if backend == "gemini":
+        from ..tier2_gemini import GeminiDecisionEngine
+        mid = model_id or "gemini-3.5-flash-lite"
+        return GeminiDecisionEngine(model_id=mid, **kwargs)
+
+    if backend == "omega":
+        from ..omega import OmegaDecisionEngine
+        from ..tier2_gemini import GeminiDecisionEngine
+        local_laya = None
+        local_vega = None
+        try:
+            from .torch_backend import TorchBackend
+            local_laya = TorchBackend(model_id="convaiinnovations/laya", device=kwargs.get("device"))
+        except Exception as e:
+            logger.debug("Omega local Laya unavailable: %s", e)
+        try:
+            from .vega_backend import VegaBackend
+            local_vega = VegaBackend(model_id=kwargs.pop("vega_model_id", "0.8b"), device=kwargs.get("device"))
+        except Exception as e:
+            logger.debug("Omega local Vega unavailable: %s", e)
+        t2_mid = model_id or "gemini-3.5-flash-lite"
+        t2 = GeminiDecisionEngine(model_id=t2_mid, max_budget_usd=float(kwargs.pop("max_budget_usd", 1.80)))
+        return OmegaDecisionEngine(local_laya=local_laya, local_vega=local_vega, tier2_engine=t2, **kwargs)
+
     if backend == "torch":
         from .torch_backend import TorchBackend
         mid = model_id or "convaiinnovations/laya"
@@ -79,4 +108,6 @@ def get_engine(
         mid = model_id or "convaiinnovations/laya-emulator"
         return EmulatorBackend(model_id=mid, **kwargs)
 
-    raise ValueError(f"Unknown backend '{backend}'; expected 'auto', 'mlx', 'torch', or 'emulator'")
+    raise ValueError(
+        f"Unknown backend '{backend}'; expected 'auto', 'mlx', 'torch', 'vega', 'gemini', 'omega', or 'emulator'"
+    )
