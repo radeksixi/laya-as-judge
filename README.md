@@ -6,11 +6,59 @@
 [![Latency](https://img.shields.io/badge/Latency-7--14ms-success.svg)](#performance--benchmarks)
 [![Cloud Cost](https://img.shields.io/badge/Cloud_Cost-%240.00-gold.svg)](#reasoning-why-its-worth-doing-and-using)
 [![CI](https://github.com/radeksixi/laya-as-judge/actions/workflows/ci.yml/badge.svg)](https://github.com/radeksixi/laya-as-judge/actions)
+[![Benchmarks](https://img.shields.io/badge/vs_Gemini_Decision_1-11%2F11_Wins-10b981.svg)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
+[![Top-1 ECE](https://img.shields.io/badge/Top--1_ECE-0.0234-0284c7.svg)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
 [![Ecosystem: sixi.ai](https://img.shields.io/badge/Used_with-sixi.ai-0ea5e9.svg)](https://sixi.ai)
 
 > **Blazing fast, calibrated LLM and AI agent evaluation using [Laya](https://huggingface.co/convaiinnovations/laya) typed decision models, local `Vega-U 0.8B` Test-Time Training, and the hybrid `Laya-Omega` selective multimodal cascade—used in production alongside [sixi.ai](https://sixi.ai).**
 >
 > Inspired by and built for native local runtimes like [mizorewww/laya-mlx](https://github.com/mizorewww/laya-mlx) on Apple Silicon and NVIDIA CUDA (`TorchBackend` / `VegaBackend`).
+
+---
+
+## Decision Benchmark Suite (9-Benchmark Table, Top-1 ECE & Total Price)
+
+![Laya-Omega v0.4.0 vs Gemini Decision 1 Benchmark Results](assets/laya-omega-benchmarks.png)
+
+### `Laya-Omega` (`v0.4.0`) vs. `Gemini Decision 1` — 11 / 11 Wins (`N = 250`/benchmark = `2,250` real HF questions, `seed=42`)
+
+`OmegaDecisionEngine`—used alongside **[sixi.ai](https://sixi.ai)** ([full technical write-up](https://radeksixi.github.io/laya-as-judge-omega-11-of-11-benchmarks/))—combines **$0.00 local CUDA encoders** (`convaiinnovations/laya` + `vega-U` `0.8B` with strictly disjoint Test-Time Training `TTTHead`s, `train ∩ test = ∅`) with **selective packed cloud escalation** (`gemini-3.5-flash-lite` → `gemini-3.8-flash` via the `google-genai` Interactions API) and **10-fold out-of-fold simplex meta-calibration** (`MetaCalibrator`).
+
+| Benchmark | Metric | Gemini Decision 1 | Laya-Omega (`v0.4.0`) | Improvement | Run Cost |
+|---|---|---:|---:|---:|---:|
+| **JevBench** | Accuracy | 92.2% | **92.80%** | **`+0.60%`** | `$0.0560` |
+| **Amazon ESCI** | 4-Class Macro-F1 | 58.7% | **59.70%** | **`+1.00%`** | `$0.1082` |
+| **New Yorker Caption** | Accuracy (5-way) | 79.7% | **92.40%** | **`+12.70%`** | `$0.0615` |
+| **Mind2Web Multimodal** | Accuracy (5-way SoM+DOM) | 86.2% | **89.60%** | **`+3.40%`** | `$0.1420` |
+| **PubMedQA** | Accuracy (3-way) | 79.8% | **80.40%** | **`+0.60%`** | `$0.0869` |
+| **Global-MMLU-Lite** | Accuracy (4 langs) | 86.0% | **87.60%** | **`+1.60%`** | `$0.0506` |
+| **When2Call** | Accuracy (4-way) | 79.9% | **80.80%** | **`+0.90%`** | `$0.0954` |
+| **MMAU** | Accuracy (Audio) | 71.8% | **73.20%** | **`+1.40%`** | `$0.0895` |
+| **Video-MME (no-sub)** | Accuracy (Video+ASR) | 69.1% | **78.40%** | **`+9.30%`** | `$0.0809` |
+| **Top-1 ECE** *(lower is better)* | 10-Fold OOF ECE | `0.0250` | **`0.0234`** *(raw `0.0298`)* | **`-6.4%`** | — |
+| **Total Price** *(2,250 Qs, lower is better)* | Measured USD | `$0.88` | **`$0.77`** | **`-12.4%`** | **`$0.7709`** |
+
+**Key Techniques in `Laya-Omega` (`v0.4.0`):**
+1. **3-Tier Selective Risk-Controlled Cascade (`OmegaDecisionEngine`):** Local `Laya` + `Vega-U 0.8B` handles confident text decisions at `$0.00`; uncertain or multimodal cases escalate to `gemini-3.5-flash-lite` (`0` thought tokens) and selectively to `gemini-3.8-flash` ranked by top-2 probability margin $p_{(1)} - p_{(2)}$.
+2. **Disjoint Test-Time Training (`TTT`) & ESCI Rare-Class Stacking:** Fits regularized linear `TTTHead`s and log-probability stacking / importance-weighted `ClassMultiplierOptimizer` strictly on disjoint `train` splits (`train ∩ test = ∅`), solving Amazon ESCI's `3.2%` rare `Complement` Macro-F1 bottleneck.
+3. **Packed Multimodal Perception & Compact Simplex Schema:** Multi-item packed prompts (`q0..qN`), compact integer-percentage JSON Schema (`"p": [p_0..p_{K-1}]` summing to `100`, cutting output tokens `2.75x`), `media_resolution="medium"` Set-of-Mark `[A]-[E]` UI crops (`Mind2Web`), and single `6x3` chronological 18-frame video storyboards + local GPU `faster-whisper` ASR (`Video-MME`, zero external subtitles).
+4. **Argmax-Preserving Simplex Meta-Calibration (`MetaCalibrator`):** 10-fold out-of-fold logistic calibration over `logit(p_max)`, margin, normalized entropy, `log(K)`, and per-tier slopes with exact `(1+(K-1)ε)/K` simplex reconstruction (`100%` Top-1 choice invariant; `~10x` cheaper than a `$7.42` frontier generative LLM judge).
+
+```python
+from laya_as_judge import CostTracker, DecisionBenchmarkSuite, GeminiDecisionEngine, OmegaDecisionEngine, VegaBackend, get_engine
+
+tracker = CostTracker(max_budget_usd=1.00)
+omega = OmegaDecisionEngine(
+    local_laya=get_engine(backend="torch", model_id="convaiinnovations/laya"),
+    local_vega=VegaBackend(model_id="0.8b", batch_size=32),
+    tier2_engine=GeminiDecisionEngine(model_id="gemini-3.5-flash-lite", cost_tracker=tracker),
+    cost_tracker=tracker,
+)
+summary = DecisionBenchmarkSuite(engine=omega, fit_disjoint_ttt=True).run_suite(limit_per_benchmark=250, source="hf", seed=42)
+print(summary.to_json())
+```
+
+---
 
 > [!IMPORTANT]
 > **What you get out of the box.** A plain `pip install -e .` gives you the judge API, calibration/pricing toolkit, CLI and examples running on the **`EmulatorBackend`**, which is **not the Laya model**. The emulator loads no weights; it is a small keyword/regex heuristic that returns answers in Laya's output format for fast offline pipeline testing and CI.
@@ -25,6 +73,7 @@
 
 ## Table of Contents
 
+- [Decision Benchmark Suite (`Laya-Omega` v0.4.0 — 11/11 vs Gemini Decision 1)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
 - [The Problem: The "Autoregressive Tax" of LLM-as-a-Judge](#the-problem-the-autoregressive-tax-of-llm-as-a-judge)
 - [The Solution: Laya as a Judge](#the-solution-laya-as-a-judge)
 - [The Logic Behind It (Architecture & Math)](#the-logic-behind-it-architecture--math)
@@ -46,7 +95,7 @@
   - [6. High-Throughput Batch Dataset Evaluation](#6-high-throughput-batch-dataset-evaluation)
   - [7. Post-Hoc Calibration (`Top-1 ECE` & `TemperatureScaler`)](#7-post-hoc-calibration-top-1-ece--temperaturescaler)
 - [Command Line Interface (CLI)](#command-line-interface-cli)
-- [Decision Benchmark Suite (9-Benchmark Table, Top-1 ECE & Total Price)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
+- [Standalone Local-Only Baseline ($0.00 Cloud Cost)](#standalone-local-only-baseline-convaiinnovationslaya-with---auto-route-limit60task-000-cloud-cost)
 - [Hardware & Engine Backends](#hardware--engine-backends)
 - [Performance & Parity Benchmarks](#performance--parity-benchmarks)
 - [Contributing](#contributing)
@@ -425,49 +474,7 @@ All commands accept `--backend {auto,mlx,torch,emulator}` (default `auto`).
 
 ---
 
-## Decision Benchmark Suite (9-Benchmark Table, Top-1 ECE & Total Price)
-
-![Laya-Omega v0.4.0 vs Gemini Decision 1 Benchmark Results](assets/laya-omega-benchmarks.png)
-
-### `Laya-Omega` (`v0.4.0`) vs. `Gemini Decision 1` — 11 / 11 Wins (`N = 250`/benchmark = `2,250` real HF questions, `seed=42`)
-
-`OmegaDecisionEngine`—used alongside **[sixi.ai](https://sixi.ai)**—combines **$0.00 local CUDA encoders** (`convaiinnovations/laya` + `vega-U` `0.8B` with strictly disjoint Test-Time Training `TTTHead`s, `train ∩ test = ∅`) with **selective packed cloud escalation** (`gemini-3.5-flash-lite` → `gemini-3.8-flash` via the `google-genai` Interactions API) and **10-fold out-of-fold simplex meta-calibration** (`MetaCalibrator`).
-
-| Benchmark | Metric | Gemini Decision 1 | Laya-Omega (`v0.4.0`) | Improvement | Run Cost |
-|---|---|---:|---:|---:|---:|
-| **JevBench** | Accuracy | 92.2% | **92.80%** | **`+0.60%`** | `$0.0560` |
-| **Amazon ESCI** | 4-Class Macro-F1 | 58.7% | **59.70%** | **`+1.00%`** | `$0.1082` |
-| **New Yorker Caption** | Accuracy (5-way) | 79.7% | **92.40%** | **`+12.70%`** | `$0.0615` |
-| **Mind2Web Multimodal** | Accuracy (5-way SoM+DOM) | 86.2% | **89.60%** | **`+3.40%`** | `$0.1420` |
-| **PubMedQA** | Accuracy (3-way) | 79.8% | **80.40%** | **`+0.60%`** | `$0.0869` |
-| **Global-MMLU-Lite** | Accuracy (4 langs) | 86.0% | **87.60%** | **`+1.60%`** | `$0.0506` |
-| **When2Call** | Accuracy (4-way) | 79.9% | **80.80%** | **`+0.90%`** | `$0.0954` |
-| **MMAU** | Accuracy (Audio) | 71.8% | **73.20%** | **`+1.40%`** | `$0.0895` |
-| **Video-MME (no-sub)** | Accuracy (Video+ASR) | 69.1% | **78.40%** | **`+9.30%`** | `$0.0809` |
-| **Top-1 ECE** *(lower is better)* | 10-Fold OOF ECE | `0.0250` | **`0.0234`** *(raw `0.0298`)* | **`-6.4%`** | — |
-| **Total Price** *(2,250 Qs, lower is better)* | Measured USD | `$0.88` | **`$0.77`** | **`-12.4%`** | **`$0.7709`** |
-
-**Key Techniques in `Laya-Omega` (`v0.4.0`):**
-1. **3-Tier Selective Risk-Controlled Cascade (`OmegaDecisionEngine`):** Local `Laya` + `Vega-U 0.8B` handles confident text decisions at `$0.00`; uncertain or multimodal cases escalate to `gemini-3.5-flash-lite` (`0` thought tokens) and selectively to `gemini-3.8-flash` ranked by top-2 probability margin $p_{(1)} - p_{(2)}$.
-2. **Disjoint Test-Time Training (`TTT`) & ESCI Rare-Class Stacking:** Fits regularized linear `TTTHead`s and log-probability stacking / importance-weighted `ClassMultiplierOptimizer` strictly on disjoint `train` splits (`train ∩ test = ∅`), solving Amazon ESCI's `3.2%` rare `Complement` Macro-F1 bottleneck.
-3. **Packed Multimodal Perception & Compact Simplex Schema:** Multi-item packed prompts (`q0..qN`), compact integer-percentage JSON Schema (`"p": [p_0..p_{K-1}]` summing to `100`, cutting output tokens `2.75x`), `media_resolution="medium"` Set-of-Mark `[A]-[E]` UI crops (`Mind2Web`), and single `6x3` chronological 18-frame video storyboards + local GPU `faster-whisper` ASR (`Video-MME`, zero external subtitles).
-4. **Argmax-Preserving Simplex Meta-Calibration (`MetaCalibrator`):** 10-fold out-of-fold logistic calibration over `logit(p_max)`, margin, normalized entropy, `log(K)`, and per-tier slopes with exact `(1+(K-1)ε)/K` simplex reconstruction (`100%` Top-1 choice invariant; `~10x` cheaper than a `$7.42` frontier generative LLM judge).
-
-```python
-from laya_as_judge import CostTracker, DecisionBenchmarkSuite, GeminiDecisionEngine, OmegaDecisionEngine, VegaBackend, get_engine
-
-tracker = CostTracker(max_budget_usd=1.00)
-omega = OmegaDecisionEngine(
-    local_laya=get_engine(backend="torch", model_id="convaiinnovations/laya"),
-    local_vega=VegaBackend(model_id="0.8b", batch_size=32),
-    tier2_engine=GeminiDecisionEngine(model_id="gemini-3.5-flash-lite", cost_tracker=tracker),
-    cost_tracker=tracker,
-)
-summary = DecisionBenchmarkSuite(engine=omega, fit_disjoint_ttt=True).run_suite(limit_per_benchmark=250, source="hf", seed=42)
-print(summary.to_json())
-```
-
-### Standalone Local-Only Baseline (`convaiinnovations/laya` with `--auto-route`, `limit=60/task`, $0.00 Cloud Cost)
+## Standalone Local-Only Baseline (`convaiinnovations/laya` with `--auto-route`, `limit=60/task`, $0.00 Cloud Cost)
 
 | Benchmark | Metric | Laya Score | Acc @ 80% Cov | Top-1 ECE (Raw $\rightarrow$ Cal) | Checkpoint Used |
 |---|---|---:|---:|---:|---|
