@@ -25,13 +25,23 @@ from .calibration import (
     top1_ece,
 )
 from .cascade import CascadedJudge, has_unsupported_modality
+from .dropins import DEFAULT_MODERATION_CATEGORIES, CandidateRankerEngine, ModerationAdapter
 from .engine import (
     BaseDecisionEngine,
     EmulatorBackend,
     SystemOneHTTPBackend,
+    TransformersDecisionBackend,
     VegaBackend,
     get_engine,
     normalize_decision_questions,
+)
+from .eval_suite import (
+    BENCHMARK_SPECS,
+    BenchmarkSpec,
+    BenchmarkTaskResult,
+    DecisionBenchmarkSuite,
+    SuiteEvaluationSummary,
+    load_benchmark_cases,
 )
 from .judged_decision import (
     DEFAULT_DECISION_AUDIT_QUESTIONS,
@@ -41,23 +51,6 @@ from .judged_decision import (
     JudgedDecisionEngine,
     JudgedDecisionReport,
     spoofed_audit_guard_rule,
-)
-from .omega import OmegaDecisionEngine
-from .profiles import (
-    HARDWARE_PROFILES,
-    HardwareProfile,
-    build_local_profile_engines,
-    get_hardware_profile,
-)
-from .server import create_app
-from .tier2_gemini import BudgetExceededError, CostTracker, GeminiDecisionEngine
-from .eval_suite import (
-    BENCHMARK_SPECS,
-    BenchmarkSpec,
-    BenchmarkTaskResult,
-    DecisionBenchmarkSuite,
-    SuiteEvaluationSummary,
-    load_benchmark_cases,
 )
 from .judges import (
     AgentTrajectoryJudge,
@@ -70,6 +63,15 @@ from .judges import (
     PairwiseComparisonJudge,
     SafetyGuardJudge,
 )
+from .omega import OmegaDecisionEngine
+from .profiles import (
+    HARDWARE_PROFILES,
+    HardwareProfile,
+    build_local_profile_engines,
+    get_hardware_profile,
+)
+from .server import MetricsCollector, create_app
+from .tier2_gemini import BudgetExceededError, CostTracker, GeminiDecisionEngine
 from .types import (
     BatchEvaluationReport,
     ChoiceResult,
@@ -80,7 +82,7 @@ from .types import (
     ScoreResult,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.1.0.dev0"
 
 __all__ = [
     # Judges
@@ -108,7 +110,13 @@ __all__ = [
     "HARDWARE_PROFILES",
     "get_hardware_profile",
     "build_local_profile_engines",
+    "MetricsCollector",
     "create_app",
+    # Ecosystem Drop-Ins
+    "CandidateRankerEngine",
+    "ModerationAdapter",
+    "DEFAULT_MODERATION_CATEGORIES",
+    # Hybrid Cloud & Benchmarks
     "GeminiDecisionEngine",
     "CostTracker",
     "BudgetExceededError",
@@ -143,6 +151,7 @@ __all__ = [
     "BaseDecisionEngine",
     "EmulatorBackend",
     "SystemOneHTTPBackend",
+    "TransformersDecisionBackend",
     "VegaBackend",
     "normalize_decision_questions",
     # Types & Reports

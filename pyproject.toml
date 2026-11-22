@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "laya-as-judge"
-version = "1.0.0"
+version = "1.1.0.dev0"
 description = "Production-ready, zero-output-token Decision, Judge, and Governance API engine (/v1/decisions, /v1/judge, /v1/judged-decision & hybrid Laya-Omega) — from $0 local edge to air-gapped enterprise, built alongside sixi.ai"
 readme = "README.md"
 requires-python = ">=3.10"

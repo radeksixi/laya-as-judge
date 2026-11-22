@@ -1,26 +1,30 @@
-"""Local Text-Only HTTP API Server exposing all 3 modes: Decision, Judge, and Judged Decision.
+"""Local Text-Only HTTP API Server exposing Decision, Judge, Judged Decision & Ecosystem Drop-Ins.
 
-Endpoints:
+Endpoints (Apache-2.0 Open Source):
   - Mode 1 (Decision — Cloud Drop-in):
-      * `POST /v1/systemone`  (TypeSafe Jev / llama.cpp / OpenRouter wire format)
-      * `POST /v1/decisions`  (OpenAI / Google / Azure Decisions API wire format, incl. `input` & `bool` aliases)
-  - Mode 2 (Judge — Structured Evaluation & Guardrails):
-      * `POST /v1/judge`      (Built-in presets or custom typed rubrics)
+      * `POST /v1/systemone`        TypeSafe Jev / llama.cpp / OpenRouter wire format
+      * `POST /v1/decisions`        OpenAI / Google / Azure Decisions API (incl. `input` & `bool`)
+      * `POST /v1/decisions/batch`  High-throughput batched decision evaluation
+  - Mode 2 (Judge & Ecosystem Drop-ins):
+      * `POST /v1/judge`            Built-in presets or custom typed rubrics
+      * `POST /v1/moderations`      Air-gapped OpenAI Moderation API drop-in
+      * `POST /v1/rerank`           Cohere / Jina / vLLM RAG reranker drop-in
+      * `POST /v1/rank`             Best-of-N candidate tournament verifier
   - Mode 3 (Hybrid — The Judged Decision):
-      * `POST /v1/judged-decision`  (Decide -> Orthogonal Audit/Judge -> ActionGate: commit/fallback/abstain/block)
-  - Operational:
-      * `GET /health`
-      * `GET /v1/models`
-      * `GET /v1/profiles`
+      * `POST /v1/judged-decision`  Decide -> Orthogonal Audit/Judge -> ActionGate (`commit/fallback/abstain/block`)
+  - Operational & Observability:
+      * `GET /health`, `GET /v1/models`, `GET /v1/profiles`, `GET /metrics` (Prometheus)
 
 Requires optional server dependencies: `pip install 'laya-as-judge[server]'`.
 """
 
 from __future__ import annotations
 
+import threading
 import time
 from typing import Any, Dict, List, Mapping, Optional, Union
 
+from .dropins import CandidateRankerEngine, ModerationAdapter
 from .engine.base import BaseDecisionEngine
 from .engine.http_systemone_backend import (
     _contains_media,
@@ -39,7 +43,7 @@ from .judges import (
     PairwiseComparisonJudge,
     SafetyGuardJudge,
 )
-from .profiles import HARDWARE_PROFILES, HardwareProfile, build_local_profile_engines
+from .profiles import HARDWARE_PROFILES, build_local_profile_engines
 
 PRESET_JUDGES = {
     "faithfulness": FaithfulnessJudge,
@@ -49,6 +53,60 @@ PRESET_JUDGES = {
     "pairwise": PairwiseComparisonJudge,
     "agent": AgentTrajectoryJudge,
 }
+
+
+class MetricsCollector:
+    """Zero-dependency thread-safe Prometheus exposition metrics tracker."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.requests_by_endpoint: Dict[str, int] = {}
+        self.gates_by_verdict: Dict[str, int] = {}
+        self.latency_ms_sum: Dict[str, float] = {}
+        self.extra_counters: Dict[str, int] = {}
+
+    def record_request(self, endpoint: str, latency_ms: float) -> None:
+        with self._lock:
+            self.requests_by_endpoint[endpoint] = self.requests_by_endpoint.get(endpoint, 0) + 1
+            self.latency_ms_sum[endpoint] = self.latency_ms_sum.get(endpoint, 0.0) + float(latency_ms)
+
+    def record_gate(self, gate: str) -> None:
+        with self._lock:
+            self.gates_by_verdict[gate] = self.gates_by_verdict.get(gate, 0) + 1
+
+    def inc_counter(self, name: str, amount: int = 1) -> None:
+        with self._lock:
+            self.extra_counters[name] = self.extra_counters.get(name, 0) + int(amount)
+
+    def render_prometheus(self) -> str:
+        with self._lock:
+            lines: List[str] = [
+                "# HELP laya_requests_total Total zero-output-token API requests by endpoint.",
+                "# TYPE laya_requests_total counter",
+            ]
+            for ep, cnt in sorted(self.requests_by_endpoint.items()):
+                lines.append(f'laya_requests_total{{endpoint="{ep}"}} {cnt}')
+            lines.extend(
+                [
+                    "# HELP laya_request_latency_ms_sum Cumulative request latency in milliseconds.",
+                    "# TYPE laya_request_latency_ms_sum counter",
+                ]
+            )
+            for ep, tot in sorted(self.latency_ms_sum.items()):
+                lines.append(f'laya_request_latency_ms_sum{{endpoint="{ep}"}} {tot:.2f}')
+            lines.extend(
+                [
+                    "# HELP laya_action_gates_total Total ActionGate verdicts emitted.",
+                    "# TYPE laya_action_gates_total counter",
+                ]
+            )
+            for g, cnt in sorted(self.gates_by_verdict.items()):
+                lines.append(f'laya_action_gates_total{{gate="{g}"}} {cnt}')
+            for name, val in sorted(self.extra_counters.items()):
+                lines.append(f"# TYPE {name} counter")
+                lines.append(f"{name} {val}")
+            return "\n".join(lines) + "\n"
+
 
 try:
     from pydantic import BaseModel as _PydanticBaseModel
@@ -60,6 +118,11 @@ try:
         input: Optional[Union[str, Dict[str, Any], List[Any]]] = None
         questions: Dict[str, Dict[str, Any]]
         symmetry_permutations: Optional[int] = _PydanticField(default=None, ge=1, le=8)
+
+    class BatchDecisionRequest(_PydanticBaseModel):
+        model: Optional[str] = None
+        items: List[Union[str, Dict[str, Any], List[Any]]]
+        questions: Dict[str, Dict[str, Any]]
 
     class JudgeRequest(_PydanticBaseModel):
         state: Optional[Union[str, Dict[str, Any], List[Any]]] = None
@@ -93,10 +156,33 @@ try:
         cross_verify: Optional[bool] = None
         metadata: Optional[Dict[str, Any]] = None
 
+    class ModerationRequest(_PydanticBaseModel):
+        input: Union[str, List[str]]
+        model: Optional[str] = None
+        categories: Optional[Dict[str, str]] = None
+
+    class RerankRequest(_PydanticBaseModel):
+        query: str
+        documents: List[Union[str, Dict[str, Any]]]
+        top_n: Optional[int] = _PydanticField(default=None, ge=1)
+        return_documents: bool = False
+        model: Optional[str] = None
+
+    class RankRequest(_PydanticBaseModel):
+        prompt: str
+        candidates: List[str]
+        rubric: Optional[str] = None
+        top_n: Optional[int] = _PydanticField(default=None, ge=1)
+        return_candidates: bool = True
+
 except ImportError:  # pragma: no cover - optional server dependency
     SystemOneRequest = Any  # type: ignore[misc,assignment]
+    BatchDecisionRequest = Any  # type: ignore[misc,assignment]
     JudgeRequest = Any  # type: ignore[misc,assignment]
     JudgedDecisionRequest = Any  # type: ignore[misc,assignment]
+    ModerationRequest = Any  # type: ignore[misc,assignment]
+    RerankRequest = Any  # type: ignore[misc,assignment]
+    RankRequest = Any  # type: ignore[misc,assignment]
 
 
 def create_app(
@@ -119,9 +205,10 @@ def create_app(
     enable_default_security_rules: bool = True,
     calibrator: Optional[Any] = None,
 ) -> Any:
-    """Create a FastAPI application serving Decision, Judge, and Hybrid Judged Decision APIs."""
+    """Create a FastAPI application serving Decision, Judge, Judged Decision, and OSS Drop-In APIs."""
     try:
         from fastapi import FastAPI, HTTPException
+        from fastapi.responses import PlainTextResponse
         import pydantic  # noqa: F401
     except ImportError as exc:
         raise ImportError(
@@ -160,17 +247,20 @@ def create_app(
         enable_default_security_rules=enable_default_security_rules,
         calibrator=calibrator,
     )
+    ranker_engine = CandidateRankerEngine(engine=judge_engine)
+    moderation_adapter = ModerationAdapter(engine=judge_engine)
+    metrics = MetricsCollector()
 
     preset_judge_instances: Dict[str, BaseJudge] = {
         name: cls(engine=judge_engine) for name, cls in PRESET_JUDGES.items()
     }
 
     app = FastAPI(
-        title="Laya-as-a-Judge Local Decision & Governance API",
+        title="Laya-as-a-Judge Local Decision & Evaluation API",
         description=(
-            "100% local, text-only, zero-output-token API providing three unified modes: "
-            "Decision (/v1/decisions, /v1/systemone), Judge (/v1/judge), and Hybrid "
-            "The Judged Decision (/v1/judged-decision)."
+            "100% local, text-only, zero-output-token API providing Decision (/v1/decisions, /v1/systemone, "
+            "/v1/decisions/batch), Judge (/v1/judge), Ecosystem Drop-Ins (/v1/moderations, /v1/rerank, /v1/rank), "
+            "and Hybrid The Judged Decision (/v1/judged-decision)."
         ),
         version=__version__,
     )
@@ -192,7 +282,12 @@ def create_app(
             )
         return resolved
 
-    def _run_decision_endpoint(req: SystemOneRequest, *, include_bool_alias: bool) -> Dict[str, Any]:
+    def _run_decision_endpoint(
+        req: SystemOneRequest,
+        *,
+        include_bool_alias: bool,
+        endpoint_path: str,
+    ) -> Dict[str, Any]:
         state = _resolve_state(req.state, req.input)
         raw_types = {
             qid: (qspec.get("type") if isinstance(qspec, Mapping) else None)
@@ -207,7 +302,11 @@ def create_app(
         predict_kwargs: Dict[str, Any] = {}
         if req.symmetry_permutations is not None and hasattr(decider_engine, "symmetry_permutations"):
             predict_kwargs["symmetry_permutations"] = req.symmetry_permutations
-        raw_out = decider_engine.predict(state, normalized_q, **predict_kwargs) if predict_kwargs else decider_engine.predict(state, normalized_q)
+        raw_out = (
+            decider_engine.predict(state, normalized_q, **predict_kwargs)
+            if predict_kwargs
+            else decider_engine.predict(state, normalized_q)
+        )
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
         answers: Dict[str, Any] = {}
@@ -220,6 +319,7 @@ def create_app(
             answers[qid] = packed
 
         usage = raw_out.get("usage") or {}
+        metrics.record_request(endpoint_path, elapsed_ms)
         return {
             "model": req.model or raw_out.get("model") or decider_engine.model_id,
             "answers": answers,
@@ -230,16 +330,18 @@ def create_app(
             "latency_ms": round(float(raw_out.get("latency_ms", elapsed_ms)), 2),
         }
 
-    # --- Operational Endpoints ---
+    # --- Operational & Observability Endpoints ---
 
     @app.get("/health")
     def health() -> Dict[str, Any]:
         return {
             "status": "ok",
+            "version": __version__,
             "text_only": text_only,
             "profile": hw_profile.name,
             "max_vram_gb": hw_profile.max_vram_gb,
             "modes": ["decision", "judge", "judged_decision"],
+            "dropins": ["decisions_batch", "moderations", "rerank", "rank", "prometheus_metrics"],
             "models": {
                 "decider": decider_engine.model_id,
                 "judge": judge_engine.model_id,
@@ -277,23 +379,61 @@ def create_app(
             "profiles": {k: v.to_dict() for k, v in HARDWARE_PROFILES.items()},
         }
 
-    # --- Mode 1: Decision API (Cloud Drop-In) ---
+    @app.get("/metrics")
+    def prometheus_metrics() -> Any:
+        return PlainTextResponse(metrics.render_prometheus(), media_type="text/plain; version=0.0.4")
+
+    # --- Mode 1: Decision API ---
 
     @app.post("/v1/systemone")
     def systemone_decision(req: SystemOneRequest) -> Dict[str, Any]:
         """TypeSafe Jev / llama.cpp `/v1/systemone` compatible endpoint."""
-        return _run_decision_endpoint(req, include_bool_alias=False)
+        return _run_decision_endpoint(req, include_bool_alias=False, endpoint_path="/v1/systemone")
 
     @app.post("/v1/decisions")
     def decisions_api(req: SystemOneRequest) -> Dict[str, Any]:
         """OpenAI / Google / Azure `/v1/decisions` compatible endpoint."""
-        return _run_decision_endpoint(req, include_bool_alias=True)
+        return _run_decision_endpoint(req, include_bool_alias=True, endpoint_path="/v1/decisions")
 
-    # --- Mode 2: Judge API ---
+    @app.post("/v1/decisions/batch")
+    def decisions_batch_api(req: BatchDecisionRequest) -> Dict[str, Any]:
+        """High-throughput batched decision evaluation with zero output tokens."""
+        t0 = time.perf_counter()
+        for item in req.items:
+            if text_only and _contains_media(item):
+                raise HTTPException(status_code=422, detail="Media payloads rejected in text-only local mode.")
+        try:
+            normalized_q = normalize_decision_questions(req.questions)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        raw_outs = decider_engine.predict_batch(list(req.items), normalized_q) if req.items else []
+        results: List[Dict[str, Any]] = []
+        total_in = 0
+        for raw_out in raw_outs:
+            total_in += int((raw_out.get("usage") or {}).get("input_tokens", 0))
+            ans_map: Dict[str, Any] = {}
+            for qid, qspec in normalized_q.items():
+                labels, probs = _extract_simplex_from_answer((raw_out.get("answers") or {}).get(qid, {}), qspec)
+                ans_map[qid] = _pack_canonical_answer(labels, probs, qspec)
+            results.append({"answers": ans_map})
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        metrics.record_request("/v1/decisions/batch", elapsed_ms)
+        return {
+            "model": req.model or decider_engine.model_id,
+            "count": len(results),
+            "results": results,
+            "usage": {"input_tokens": total_in, "output_tokens": 0},
+            "latency_ms": round(elapsed_ms, 2),
+        }
+
+    # --- Mode 2: Judge & Ecosystem Drop-Ins ---
 
     @app.post("/v1/judge")
     def run_judge(req: JudgeRequest) -> Dict[str, Any]:
         """Evaluate state with a preset or custom typed rubric judge."""
+        t0 = time.perf_counter()
         state = _resolve_state(req.state, req.input)
 
         if req.questions:
@@ -321,13 +461,51 @@ def create_app(
         payload["passed"] = report.passed
         payload["average_confidence"] = round(report.average_confidence, 4)
         payload["average_top1_probability"] = round(report.average_top1_probability, 4)
+        metrics.record_request("/v1/judge", (time.perf_counter() - t0) * 1000.0)
         return payload
+
+    @app.post("/v1/moderations")
+    def run_moderations(req: ModerationRequest) -> Dict[str, Any]:
+        """Air-gapped OpenAI `/v1/moderations` drop-in endpoint ($0 local, 0 output tokens)."""
+        t0 = time.perf_counter()
+        out = moderation_adapter.moderate(req.input, model=req.model, custom_categories=req.categories)
+        metrics.record_request("/v1/moderations", (time.perf_counter() - t0) * 1000.0)
+        return out
+
+    @app.post("/v1/rerank")
+    def run_rerank(req: RerankRequest) -> Dict[str, Any]:
+        """Cohere / Jina / vLLM drop-in `/v1/rerank` RAG relevance endpoint."""
+        t0 = time.perf_counter()
+        out = ranker_engine.rerank(
+            query=req.query,
+            documents=req.documents,
+            top_n=req.top_n,
+            return_documents=req.return_documents,
+            model=req.model,
+        )
+        metrics.record_request("/v1/rerank", (time.perf_counter() - t0) * 1000.0)
+        return out
+
+    @app.post("/v1/rank")
+    def run_rank(req: RankRequest) -> Dict[str, Any]:
+        """Zero-output-token Best-of-N candidate tournament verifier."""
+        t0 = time.perf_counter()
+        out = ranker_engine.rank(
+            prompt=req.prompt,
+            candidates=req.candidates,
+            rubric=req.rubric,
+            top_n=req.top_n,
+            return_candidates=req.return_candidates,
+        )
+        metrics.record_request("/v1/rank", (time.perf_counter() - t0) * 1000.0)
+        return out
 
     # --- Mode 3: Hybrid — The Judged Decision ---
 
     @app.post("/v1/judged-decision")
     def run_judged_decision(req: JudgedDecisionRequest) -> Dict[str, Any]:
         """Hybrid mode: Decide -> Orthogonal Audit/Judge -> Deterministic Action Gate."""
+        t0 = time.perf_counter()
         state = _resolve_state(req.state, req.input)
 
         try:
@@ -372,13 +550,20 @@ def create_app(
             cross_verify=req.cross_verify,
             metadata=req.metadata,
         )
+        metrics.record_gate(result.gate.value)
+        metrics.record_request("/v1/judged-decision", (time.perf_counter() - t0) * 1000.0)
         return result.to_dict()
 
-    # Attach engines on app.state for programmatic inspection/testing
+    # Attach engines & helpers on app.state for clean composition by commercial extensions (e.g. sixi-assure-runtime)
     app.state.decider_engine = decider_engine
     app.state.judge_engine = judge_engine
     app.state.guard_engine = guard_engine
     app.state.judged_engine = judged_engine
+    app.state.ranker_engine = ranker_engine
+    app.state.moderation_adapter = moderation_adapter
+    app.state.preset_judges = preset_judge_instances
+    app.state.metrics = metrics
     app.state.hardware_profile = hw_profile
+    app.state.text_only = text_only
 
     return app

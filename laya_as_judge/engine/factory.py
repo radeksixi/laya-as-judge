@@ -46,6 +46,11 @@ def get_engine(
         mid = model_id or "local-decision-model"
         return SystemOneHTTPBackend(model_id=mid, **kwargs)
 
+    if backend in ("hf-decision", "hf_decision", "transformers-decision", "transformers"):
+        from .transformers_decision_backend import TransformersDecisionBackend
+        mid = model_id or "Cloudflare/clef-flash"
+        return TransformersDecisionBackend(model_id=mid, **kwargs)
+
     if backend in ("local-omega", "local_omega"):
         from ..profiles import build_local_profile_engines
         profile_name = kwargs.pop("profile", "edge-6gb")
