@@ -15,6 +15,7 @@ from . import __version__
 from .batch import BatchEvaluator
 from .benchmark import BenchmarkRunner
 from .eval_suite import BENCHMARK_SPECS, DecisionBenchmarkSuite
+from .judged_decision import AuditPolicy, JudgedDecisionEngine
 from .judges import (
     AgentTrajectoryJudge,
     AnswerRelevanceJudge,
@@ -23,6 +24,7 @@ from .judges import (
     PairwiseComparisonJudge,
     SafetyGuardJudge,
 )
+from .profiles import HARDWARE_PROFILES, build_local_profile_engines
 from .types import ChoiceResult, NoulResult, ScoreResult
 
 console = Console()
@@ -461,6 +463,178 @@ def demo():
     console.print(f"Winner:  [bold green]{rep3.get_choice('winner')}[/bold green] "
                   f"(Confidence = {rep3.get_confidence('winner') * 100:.1f}%) | "
                   f"Latency = [green]{rep3.latency_ms} ms[/green]")
+
+
+@main.command()
+def profiles():
+    """List local text-only hardware VRAM profiles (edge-6gb, rtx-16gb, rtx-16gb-glide, workstation-24gb, emulator)."""
+    table = Table(title="Local Text-Only Hardware Profiles ($0.00 Cloud Cost)", show_lines=True)
+    table.add_column("Profile", style="bold cyan", no_wrap=True)
+    table.add_column("VRAM Budget", style="bold green")
+    table.add_column("Target Hardware", style="white")
+    table.add_column("Tier 1 (Fast Decider)", style="yellow")
+    table.add_column("Tier 2 (Heavy Judge / Arbiter)", style="magenta")
+    table.add_column("Recommended Tier-2 Server Command", style="dim")
+
+    for p in HARDWARE_PROFILES.values():
+        table.add_row(
+            p.name,
+            p.estimated_vram_gb,
+            p.target_hardware,
+            f"{p.tier1_backend}: {p.tier1_model} (~{p.tier1_vram_gb:.2f} GB)",
+            f"{p.tier2_backend}: {p.tier2_model} (~{p.tier2_vram_gb:.1f} GB)",
+            p.recommended_tier2_cmd,
+        )
+
+    console.print(table)
+
+
+@main.command()
+@click.option(
+    "--profile",
+    "-p",
+    type=click.Choice(list(HARDWARE_PROFILES.keys())),
+    default="emulator",
+    help="Hardware VRAM profile ('edge-6gb', 'rtx-16gb', 'rtx-16gb-glide', 'workstation-24gb', 'emulator').",
+)
+@click.option("--host", default="127.0.0.1", show_default=True, help="Bind host address.")
+@click.option("--port", default=8000, show_default=True, type=int, help="Bind HTTP port.")
+@click.option("--tier1-backend", default=None, help="Optional Tier-1 backend override ('torch', 'vega', 'mlx', 'systemone', 'emulator').")
+@click.option("--tier1-model", default=None, help="Optional Tier-1 model ID override.")
+@click.option("--tier1-url", default=None, help="Optional HTTP base URL for a local Tier-1 SystemOne server.")
+@click.option("--tier2-url", default=None, help="Optional HTTP base URL for a local Tier-2 llama-server/OneJev/vLLM (e.g. http://127.0.0.1:8081).")
+@click.option("--tier2-model", default=None, help="Optional Tier-2 model ID override.")
+@click.option("--device", default=None, help="Optional Torch/Vega device override ('cuda', 'cpu', 'mps').")
+@click.option(
+    "--audit-policy",
+    type=click.Choice([p.value for p in AuditPolicy]),
+    default="on_high_stakes",
+    show_default=True,
+    help="Default audit policy for /v1/judged-decision.",
+)
+@click.option("--cross-verify/--no-cross-verify", default=False, help="Enable cross-family decision re-scoring on Judge engine.")
+@click.option("--ingress-guard/--no-ingress-guard", default=False, help="Enable fast ingress safety guardrail before Decider.")
+@click.option("--fallback/--no-fallback", "fallback_to_emulator", default=True, show_default=True, help="Fall back to EmulatorBackend if neural runtime is not installed.")
+def serve(
+    profile: str,
+    host: str,
+    port: int,
+    tier1_backend: Optional[str],
+    tier1_model: Optional[str],
+    tier1_url: Optional[str],
+    tier2_url: Optional[str],
+    tier2_model: Optional[str],
+    device: Optional[str],
+    audit_policy: str,
+    cross_verify: bool,
+    ingress_guard: bool,
+    fallback_to_emulator: bool,
+):
+    """Serve the 3-mode local text-only API: Decision (/v1/decisions, /v1/systemone), Judge (/v1/judge), and Hybrid (/v1/judged-decision)."""
+    try:
+        import uvicorn
+    except ImportError as exc:
+        raise click.ClickException(
+            "uvicorn is not installed. Install server extras via: pip install 'laya-as-judge[server]'"
+        ) from exc
+
+    from .server import create_app
+
+    app = create_app(
+        profile=profile,
+        tier1_backend=tier1_backend,
+        tier1_model=tier1_model,
+        tier1_url=tier1_url,
+        tier2_url=tier2_url,
+        tier2_model=tier2_model,
+        device=device,
+        fallback_to_emulator=fallback_to_emulator,
+        default_audit_policy=audit_policy,
+        cross_verify=cross_verify,
+        run_ingress_guard=ingress_guard,
+    )
+
+    hw = app.state.hardware_profile
+    console.print(
+        Panel.fit(
+            f"[bold cyan]Laya-as-a-Judge v{__version__} Local API Server[/bold cyan] — Profile: [bold green]{hw.name}[/bold green] ({hw.estimated_vram_gb})\n"
+            f"Decider: [yellow]{app.state.decider_engine.model_id}[/yellow] | "
+            f"Judge: [magenta]{app.state.judge_engine.model_id}[/magenta] | "
+            f"Audit Policy: [cyan]{audit_policy}[/cyan]\n"
+            f"[white]Endpoints:[/white]\n"
+            f"  • Decision (Cloud Drop-in): [bold]POST http://{host}:{port}/v1/decisions[/bold] & [bold]/v1/systemone[/bold]\n"
+            f"  • Judge (Audit & Guard):    [bold]POST http://{host}:{port}/v1/judge[/bold]\n"
+            f"  • Hybrid (Judged Decision): [bold]POST http://{host}:{port}/v1/judged-decision[/bold]\n"
+            f"  • Health & Profiles:        [dim]GET /health, /v1/models, /v1/profiles[/dim]",
+            border_style="cyan",
+        )
+    )
+    uvicorn.run(app, host=host, port=port)
+
+
+@main.command("judged-decision")
+@click.option("--input", "-i", "input_text", required=True, help="State text or JSON to decide and judge.")
+@click.option(
+    "--questions",
+    "-q",
+    "questions_json",
+    required=True,
+    help="JSON string specifying typed decision questions (noul/choice/score).",
+)
+@click.option(
+    "--profile",
+    "-p",
+    type=click.Choice(list(HARDWARE_PROFILES.keys())),
+    default="emulator",
+    help="Hardware VRAM profile.",
+)
+@click.option(
+    "--audit-policy",
+    type=click.Choice([p.value for p in AuditPolicy]),
+    default="on_high_stakes",
+    show_default=True,
+    help="Audit trigger policy (fail-closed if --high-stakes-actions is omitted).",
+)
+@click.option(
+    "--high-stakes-actions",
+    default=None,
+    help="Comma-separated high-stakes choice labels for --audit-policy on_high_stakes (e.g. 'issue_refund,delete_account').",
+)
+@click.option("--tier2-url", default=None, help="Optional local Tier-2 SystemOne server URL.")
+def judged_decision_cmd(
+    input_text: str,
+    questions_json: str,
+    profile: str,
+    audit_policy: str,
+    high_stakes_actions: Optional[str],
+    tier2_url: Optional[str],
+):
+    """Run the hybrid 'The Judged Decision' workflow (Decide -> Judge -> Action Gate) from CLI."""
+    try:
+        state = json.loads(input_text)
+    except json.JSONDecodeError:
+        state = input_text
+
+    try:
+        questions = json.loads(questions_json)
+    except json.JSONDecodeError as exc:
+        raise click.ClickException(f"Invalid --questions JSON: {exc}") from exc
+
+    hs_list = [x.strip() for x in high_stakes_actions.split(",") if x.strip()] if high_stakes_actions else None
+    decider, judge_eng, guard_eng, _ = build_local_profile_engines(
+        profile_name=profile,
+        tier2_url=tier2_url,
+        fallback_to_emulator=True,
+    )
+    engine = JudgedDecisionEngine(
+        decider_engine=decider,
+        judge_engine=judge_eng,
+        guard_engine=guard_eng,
+        audit_policy=audit_policy,
+        high_stakes_actions=hs_list,
+    )
+    rep = engine.evaluate(state, questions)
+    console.print(rep.to_json(indent=2))
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ import numpy as np
 
 from .calibration import ClassMultiplierOptimizer
 from .cascade import has_unsupported_modality
-from .engine.base import BaseDecisionEngine, confidence_from_probs, validate_question_spec
+from .engine.base import BaseDecisionEngine, confidence_from_probs, serialize_state, validate_question_spec
 from .tier2_gemini import CostTracker, GeminiDecisionEngine
 
 
@@ -107,10 +107,14 @@ def _uncertainty_score_from_raw(raw_out: Mapping[str, Any], questions: Mapping[s
 
 
 class OmegaDecisionEngine(BaseDecisionEngine):
-    """Hybrid Conformal Cascade Engine (`Laya` + `Vega-U` + `TTTHead` locally -> `Gemini` Tier-2).
+    """Hybrid Conformal Cascade Engine (`Laya` + `Vega-U` + `TTTHead` locally -> Tier-2 Local or Cloud Engine).
 
-    Achieves frontier accuracy across text & multimodal benchmarks while keeping `Total price`
-    a small fraction of cloud-only models via conformal Top-K uncertainty routing.
+    Supports both:
+      - **Local-only cascade (`$0.00`):** Local Tier-1 (`Laya` / `Vega-U`) escalating
+        uncertain cases to a heavier local Tier-2 model (e.g. `SystemOneHTTPBackend`
+        running `Kev-4B`, `Winnow-12B`, `Elephant-1`, or `Mammoth-1`).
+      - **Hybrid local + cloud cascade:** Escalating uncertain or multimodal cases
+        to `GeminiDecisionEngine`.
     """
 
     supports_multimodal: bool = True
@@ -119,7 +123,7 @@ class OmegaDecisionEngine(BaseDecisionEngine):
         self,
         local_laya: Optional[BaseDecisionEngine] = None,
         local_vega: Optional[BaseDecisionEngine] = None,
-        tier2_engine: Optional[GeminiDecisionEngine] = None,
+        tier2_engine: Optional[BaseDecisionEngine] = None,
         cost_tracker: Optional[CostTracker] = None,
         escalation_threshold: float = 0.78,
         max_escalation_fraction: float = 0.35,
@@ -129,15 +133,21 @@ class OmegaDecisionEngine(BaseDecisionEngine):
         ttt_tier2_blend_weight: float = 0.74,
         default_tier2_model: str = "gemini-3.5-flash-lite",
         max_budget_usd: float = 1.80,
+        joint_schema_tier2: bool = False,
+        joint_schema_min_questions: int = 4,
+        joint_schema_min_chars: int = 1200,
     ):
         self.local_laya = local_laya
         self.local_vega = local_vega
-        self.cost_tracker = cost_tracker or (
-            tier2_engine.cost_tracker if tier2_engine is not None else CostTracker(max_budget_usd=max_budget_usd)
-        )
-        self.tier2_engine = tier2_engine or GeminiDecisionEngine(
+        t2_tracker = getattr(tier2_engine, "cost_tracker", None) if tier2_engine is not None else None
+        self.cost_tracker = cost_tracker or t2_tracker or CostTracker(max_budget_usd=max_budget_usd)
+        self.tier2_engine: BaseDecisionEngine = tier2_engine or GeminiDecisionEngine(
             model_id=default_tier2_model,
             cost_tracker=self.cost_tracker,
+        )
+        self.supports_multimodal = bool(
+            getattr(self.tier2_engine, "supports_multimodal", False)
+            or getattr(self.local_vega, "supports_multimodal", False)
         )
         self.escalation_threshold = float(escalation_threshold)
         self.max_escalation_fraction = float(np.clip(max_escalation_fraction, 0.0, 1.0))
@@ -145,6 +155,9 @@ class OmegaDecisionEngine(BaseDecisionEngine):
         self.ttt_vega_weight = float(ttt_vega_weight)
         self.tier2_blend_weight = float(tier2_blend_weight)
         self.ttt_tier2_blend_weight = float(ttt_tier2_blend_weight)
+        self.joint_schema_tier2 = bool(joint_schema_tier2)
+        self.joint_schema_min_questions = max(2, int(joint_schema_min_questions))
+        self.joint_schema_min_chars = max(0, int(joint_schema_min_chars))
         self.class_optimizers: Dict[str, ClassMultiplierOptimizer] = {}
         self.tier2_class_optimizers: Dict[str, ClassMultiplierOptimizer] = {}
 
@@ -162,6 +175,8 @@ class OmegaDecisionEngine(BaseDecisionEngine):
             "tier2_escalated": 0.0,
             "tier2_heavy_escalated": 0.0,
             "multimodal_routed": 0.0,
+            "joint_schema_routed": 0.0,
+            "tier1_overflow_escalated": 0.0,
             "total_cost_usd": 0.0,
         }
 
@@ -315,6 +330,34 @@ class OmegaDecisionEngine(BaseDecisionEngine):
         out["answers"] = ans_map
         return out
 
+    def _call_tier2_predict(
+        self,
+        state: Union[str, Dict[str, Any], List[Any]],
+        questions: Dict[str, Dict[str, Any]],
+        model_override: Optional[str] = None,
+        thinking_level_override: Optional[str] = None,
+        system_hint_override: Optional[str] = None,
+        image_max_side_override: Optional[int] = None,
+        image_resolution_override: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Invoke `self.tier2_engine.predict`, passing Gemini-specific kwargs only when supported."""
+        if isinstance(self.tier2_engine, GeminiDecisionEngine):
+            return self.tier2_engine.predict(
+                state,
+                questions,
+                model_override=model_override,
+                thinking_level_override=thinking_level_override,
+                system_hint_override=system_hint_override,
+                image_max_side_override=image_max_side_override,
+                image_resolution_override=image_resolution_override,
+            )
+        if model_override is not None:
+            try:
+                return self.tier2_engine.predict(state, questions, model_override=model_override)
+            except TypeError:
+                pass
+        return self.tier2_engine.predict(state, questions)
+
     def predict(
         self,
         state: Union[str, Dict[str, Any], List[Any]],
@@ -332,12 +375,24 @@ class OmegaDecisionEngine(BaseDecisionEngine):
         normalized_q = {qid: validate_question_spec(qid, q) for qid, q in questions.items()}
         self.stats["total_cases"] += 1
 
-        # 1. Direct Tier-2 route for multimodal inputs or forced Tier-2 tasks
-        if force_tier2 or has_unsupported_modality(state) or (self.local_laya is None and self.local_vega is None):
+        # 1. Direct Tier-2 route for multimodal inputs, forced Tier-2, or long multi-question joint-schema packs
+        should_joint_route = (
+            self.joint_schema_tier2
+            and len(normalized_q) >= self.joint_schema_min_questions
+            and len(serialize_state(state)) >= self.joint_schema_min_chars
+        )
+        if (
+            force_tier2
+            or should_joint_route
+            or has_unsupported_modality(state)
+            or (self.local_laya is None and self.local_vega is None)
+        ):
             if has_unsupported_modality(state):
                 self.stats["multimodal_routed"] += 1
+            if should_joint_route:
+                self.stats["joint_schema_routed"] += 1
             self.stats["tier2_escalated"] += 1
-            t2_out = self.tier2_engine.predict(
+            t2_out = self._call_tier2_predict(
                 state,
                 normalized_q,
                 model_override=tier2_model,
@@ -351,8 +406,33 @@ class OmegaDecisionEngine(BaseDecisionEngine):
 
         # 2. Local GPU pass (Laya + Vega-U; strip Tier-2-only precedent context so 512/1024-token encoders stay clean)
         loc_state = self._local_clean_state(state)
-        laya_out = self.local_laya.predict(loc_state, normalized_q) if self.local_laya is not None else None
-        vega_out = self.local_vega.predict(loc_state, normalized_q) if self.local_vega is not None else None
+        laya_out = None
+        vega_out = None
+        if self.local_laya is not None:
+            try:
+                laya_out = self.local_laya.predict(loc_state, normalized_q)
+            except Exception:
+                laya_out = None
+        if self.local_vega is not None:
+            try:
+                vega_out = self.local_vega.predict(loc_state, normalized_q)
+            except Exception:
+                vega_out = None
+        if laya_out is None and vega_out is None:
+            # Tier-1 overflowed context window or failed -> gracefully escalate straight to Tier-2
+            self.stats["tier1_overflow_escalated"] += 1
+            self.stats["tier2_escalated"] += 1
+            t2_out = self._call_tier2_predict(
+                state,
+                normalized_q,
+                model_override=tier2_model,
+                thinking_level_override=thinking_level,
+                system_hint_override=system_hint,
+                image_max_side_override=image_max_side,
+                image_resolution_override=image_resolution,
+            )
+            self.stats["total_cost_usd"] += float(t2_out.get("cost_usd", 0.0))
+            return self._merge_tier2(None, t2_out, normalized_q, blend_weight_override=tier2_blend_weight)
         local_out = self._fuse_local(laya_out, vega_out, normalized_q)
 
         thresh = float(escalation_threshold if escalation_threshold is not None else self.escalation_threshold)
@@ -373,7 +453,7 @@ class OmegaDecisionEngine(BaseDecisionEngine):
 
         # 3. Conformal-ambiguous -> Escalate to Tier-2 and blend
         self.stats["tier2_escalated"] += 1
-        t2_out = self.tier2_engine.predict(
+        t2_out = self._call_tier2_predict(
             state,
             normalized_q,
             model_override=tier2_model,
@@ -430,7 +510,7 @@ class OmegaDecisionEngine(BaseDecisionEngine):
             )
         elif workers <= 1:
             stage_a = [
-                self.tier2_engine.predict(
+                self._call_tier2_predict(
                     st,
                     qs,
                     model_override=tier2_model,
@@ -445,7 +525,7 @@ class OmegaDecisionEngine(BaseDecisionEngine):
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futs = [
                     pool.submit(
-                        self.tier2_engine.predict,
+                        self._call_tier2_predict,
                         st,
                         qs,
                         model_override=tier2_model,
@@ -500,7 +580,7 @@ class OmegaDecisionEngine(BaseDecisionEngine):
             )
         elif h_workers <= 1:
             stage_b = [
-                self.tier2_engine.predict(
+                self._call_tier2_predict(
                     pairs[i][0],
                     pairs[i][1],
                     model_override=tier2_heavy_model,
@@ -515,7 +595,7 @@ class OmegaDecisionEngine(BaseDecisionEngine):
             with ThreadPoolExecutor(max_workers=h_workers) as pool:
                 futs = [
                     pool.submit(
-                        self.tier2_engine.predict,
+                        self._call_tier2_predict,
                         pairs[i][0],
                         pairs[i][1],
                         model_override=tier2_heavy_model,

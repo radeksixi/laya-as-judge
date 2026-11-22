@@ -41,6 +41,21 @@ def get_engine(
         mid = model_id or "0.8b"
         return VegaBackend(model_id=mid, **kwargs)
 
+    if backend in ("systemone", "http", "decisions"):
+        from .http_systemone_backend import SystemOneHTTPBackend
+        mid = model_id or "local-decision-model"
+        return SystemOneHTTPBackend(model_id=mid, **kwargs)
+
+    if backend in ("local-omega", "local_omega"):
+        from ..profiles import build_local_profile_engines
+        profile_name = kwargs.pop("profile", "edge-6gb")
+        decider, _, _, _ = build_local_profile_engines(
+            profile_name=profile_name,
+            tier1_model=model_id,
+            **kwargs,
+        )
+        return decider
+
     if backend == "gemini":
         from ..tier2_gemini import GeminiDecisionEngine
         mid = model_id or "gemini-3.5-flash-lite"
@@ -109,5 +124,6 @@ def get_engine(
         return EmulatorBackend(model_id=mid, **kwargs)
 
     raise ValueError(
-        f"Unknown backend '{backend}'; expected 'auto', 'mlx', 'torch', 'vega', 'gemini', 'omega', or 'emulator'"
+        f"Unknown backend '{backend}'; expected 'auto', 'mlx', 'torch', 'vega', "
+        "'systemone', 'local-omega', 'gemini', 'omega', or 'emulator'"
     )

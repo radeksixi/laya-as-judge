@@ -25,8 +25,31 @@ from .calibration import (
     top1_ece,
 )
 from .cascade import CascadedJudge, has_unsupported_modality
-from .engine import BaseDecisionEngine, EmulatorBackend, VegaBackend, get_engine
+from .engine import (
+    BaseDecisionEngine,
+    EmulatorBackend,
+    SystemOneHTTPBackend,
+    VegaBackend,
+    get_engine,
+    normalize_decision_questions,
+)
+from .judged_decision import (
+    DEFAULT_DECISION_AUDIT_QUESTIONS,
+    DEFAULT_SECURITY_POLICY_RULES,
+    ActionGate,
+    AuditPolicy,
+    JudgedDecisionEngine,
+    JudgedDecisionReport,
+    spoofed_audit_guard_rule,
+)
 from .omega import OmegaDecisionEngine
+from .profiles import (
+    HARDWARE_PROFILES,
+    HardwareProfile,
+    build_local_profile_engines,
+    get_hardware_profile,
+)
+from .server import create_app
 from .tier2_gemini import BudgetExceededError, CostTracker, GeminiDecisionEngine
 from .eval_suite import (
     BENCHMARK_SPECS,
@@ -57,7 +80,7 @@ from .types import (
     ScoreResult,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.7.0"
 
 __all__ = [
     # Judges
@@ -74,6 +97,18 @@ __all__ = [
     # Architecture & Workflows
     "CascadedJudge",
     "OmegaDecisionEngine",
+    "JudgedDecisionEngine",
+    "JudgedDecisionReport",
+    "ActionGate",
+    "AuditPolicy",
+    "DEFAULT_DECISION_AUDIT_QUESTIONS",
+    "DEFAULT_SECURITY_POLICY_RULES",
+    "spoofed_audit_guard_rule",
+    "HardwareProfile",
+    "HARDWARE_PROFILES",
+    "get_hardware_profile",
+    "build_local_profile_engines",
+    "create_app",
     "GeminiDecisionEngine",
     "CostTracker",
     "BudgetExceededError",
@@ -107,7 +142,9 @@ __all__ = [
     "get_engine",
     "BaseDecisionEngine",
     "EmulatorBackend",
+    "SystemOneHTTPBackend",
     "VegaBackend",
+    "normalize_decision_questions",
     # Types & Reports
     "DecisionType",
     "JudgementResult",

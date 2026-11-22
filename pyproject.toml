@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "laya-as-judge"
-version = "0.4.0"
-description = "Calibrated, hybrid local + cloud decision evaluation engine (Laya-Omega) used with sixi.ai — beating frontier LLM-as-a-Judge & Gemini Decision 1 across text, vision, audio, and video"
+version = "0.7.0"
+description = "Calibrated local & hybrid Decision, Judge, and Judged-Decision API engine (Decision /v1/decisions, Judge /v1/judge, Hybrid /v1/judged-decision, and Laya-Omega cascade) used alongside sixi.ai"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -15,6 +15,7 @@ authors = [
 ]
 keywords = [
     "llm-as-a-judge",
+    "decision-api",
     "evaluation",
     "laya",
     "mlx",
@@ -22,10 +23,11 @@ keywords = [
     "guardrails",
     "rag-evaluation",
     "benchmarking",
-    "ai-safety"
+    "ai-safety",
+    "ai-governance"
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
@@ -66,12 +68,19 @@ omega = [
     "Pillow>=10.0.0",
     "scikit-learn>=1.3.0",
 ]
+server = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "pydantic>=2.0.0",
+]
 all = [
-    "laya-as-judge[mlx,torch,laya,benchmarks,omega]",
+    "laya-as-judge[mlx,torch,laya,benchmarks,omega,server]",
 ]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "fastapi>=0.115.0",
+    "httpx>=0.27.0",
 ]
 
 [project.scripts]

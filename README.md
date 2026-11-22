@@ -1,5 +1,6 @@
 # Laya-as-a-Judge ⚡⚖️
 
+[![Version](https://img.shields.io/badge/Version-0.7.0-0ea5e9.svg)](#100-local-text-only-api-decision-judge--hybrid-the-judged-decision--v070)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
 [![Output Tokens](https://img.shields.io/badge/Output_Tokens-0-orange.svg)](#the-logic-behind-it-architecture--math)
@@ -74,6 +75,7 @@ print(summary.to_json())
 ## Table of Contents
 
 - [Decision Benchmark Suite (`Laya-Omega` v0.4.0 — 11/11 vs Gemini Decision 1)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
+- [100% Local Text-Only API: Decision, Judge & Hybrid ("The Judged Decision")](#100-local-text-only-api-decision-judge--hybrid-the-judged-decision)
 - [The Problem: The "Autoregressive Tax" of LLM-as-a-Judge](#the-problem-the-autoregressive-tax-of-llm-as-a-judge)
 - [The Solution: Laya as a Judge](#the-solution-laya-as-a-judge)
 - [The Logic Behind It (Architecture & Math)](#the-logic-behind-it-architecture--math)
@@ -100,6 +102,70 @@ print(summary.to_json())
 - [Performance & Parity Benchmarks](#performance--parity-benchmarks)
 - [Contributing](#contributing)
 - [License & Acknowledgments](#license--acknowledgments)
+
+---
+
+## 100% Local Text-Only API: Decision, Judge & Hybrid ("The Judged Decision") — `v0.7.0`
+
+![laya-as-judge v0.7.0 — 5 Live Local-GPU Experiments ($0.00 Cloud)](assets/laya-v07-local-benchmarks.png)
+
+In addition to the Python SDK and hybrid cloud `Laya-Omega`, `laya-as-judge v0.7.0` ships a **100% local, text-only HTTP server** (`laya-judge serve`) and `SystemOneHTTPBackend` exposing **three unified operational modes** with `0` output tokens and `$0.00` cloud cost ([5-experiment write-up](https://radeksixi.github.io/laya-as-judge-0-7-local-decision-api-five-experiments/)):
+
+| Mode | Endpoint(s) | Purpose | Key Output |
+|---|---|---|---|
+| **1. Decision** | `POST /v1/decisions`<br>`POST /v1/systemone` | Cloud drop-in replacement for Jev / OpenAI / Google / Azure Decisions API (supports `state`/`input` & `noul`/`bool`) | `answers` (`noul`, `choice`, `score`) + calibrated probabilities |
+| **2. Judge** | `POST /v1/judge` | Preset (`faithfulness`, `safety`, `pairwise`, `agent`, `relevance`, `instruction`) & custom typed rubrics | `passed`, `judgements`, `average_confidence`, `average_top1_probability` |
+| **3. Hybrid ("The Judged Decision")** | `POST /v1/judged-decision` | **Decide → Orthogonal Judge/Audit → Deterministic Action Gate** (fail-closed `on_high_stakes` default, `always`, or `on_uncertain`) | `gate` (`commit` / `fallback` / `abstain` / `block`), `effective_decision`, `judgement`, `calibrated_risk`, `audit_trace` |
+
+### Local Text-Only Hardware VRAM Profiles
+
+Inspect all profiles and ready-to-run `llama-server` commands with `laya-judge profiles`:
+
+| Profile | Measured VRAM | Target Hardware | Tier 1 (Fast Decider / Guard) | Tier 2 (Cross-Family Judge & Arbiter) |
+|---|---|---|---|---|
+| **`edge-6gb`** | **5.88 GB** (max 6 GB) | NVIDIA Jetson Orin Nano 8GB / RTX 3050–4060 8GB | `ggml-org/Laya-GGUF:Q8_0` (~0.45 GB) or `convaiinnovations/laya` | `ggml-org/Kev-4B-GGUF:Q4_K_M` (~3.0 GB) via `llama-server /v1/systemone` |
+| **`rtx-16gb`** *(Recommended all-round)* | **11.75 GB** (max 15 GB) | 1× NVIDIA RTX 16GB (4060 Ti 16GB / 4080 / 5060 Ti / 5070 Ti / 5080) | `ggml-org/Kev-4B-GGUF:Q4_K_M` (~3.0 GB) | `ggml-org/Clef-Flash-GGUF:Q4_K_M` (~6.8 GB, **joint-schema** head) via `llama-server /v1/systemone` |
+| **`rtx-16gb-glide`** *(Best EN + ECE)* | **11.11 GB** (max 15 GB) | 1× NVIDIA RTX 16GB (4060 Ti 16GB / 4080 / 5060 Ti / 5070 Ti / 5080) | `ggml-org/Kev-4B-GGUF:Q4_K_M` (~3.0 GB) | `bartowski/fastino_GLiDE-9B-GGUF:IQ4_NL` (~5.8 GB) via `llama-server /v1/systemone` |
+| **`workstation-24gb`** | **16.8 – 20.2 GB** | RTX 3090/4090/5090 / 2×16GB / A6000 / L40S | `Kev-4B` Q4 (~3.0 GB) | `ggml-org/OpenJev-GGUF:Q4_K_M` (~19.4 GB) or `Clef-Flash-BF16` (~16.8 GB) |
+| **`emulator`** | **0.0 GB** | Any CPU / CI runner | `EmulatorBackend` | `EmulatorBackend` (zero downloads) |
+
+### Measured Live Local-GPU Benchmarks (`$0.00` Cloud Cost, 5 Experiments)
+
+All local numbers below were measured live on real `llama-server /v1/systemone` GGUF weights (RTX 5060 Ti 16 GB; `OpenJev-27B+` split across 2×16 GB), `N = 40`/task (`240` real Hugging Face questions, `seed=42`):
+
+| Local Profile / Model | VRAM | 6-Bench Avg | JevBench | ESCI (F1) | When2Call | PubMedQA | Global-MMLU | New Yorker | Top-1 ECE (Raw → Cal) | P50 ms |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| *Standalone Laya 421M* *(ref)* | `0.85 GB` | `41.6%` | `81.7%` | `25.5%` | `40.0%` | `36.7%` | `28.9%` | `36.7%` | `0.0975 → 0.0864` | `10 ms` |
+| **`edge-6gb`** (`Laya-Q8 + Kev-4B`) | **`5.88 GB`** | **`61.6%`** | `87.5%` | `36.9%` | `75.0%` | `55.0%` | `65.0%` | `50.0%` | `0.0780 → 0.0621` | **`87.6 ms`** |
+| `Clef-Flash-9B BF16` *(solo)* | `16.79 GB` | `76.1%` | `87.5%` | **`71.5%`** | `67.5%` | `72.5%` | **`92.5%`** | `65.0%` | `0.0694 → 0.0498` | `184.9 ms` |
+| `OpenJev-27B+ Q4` *(solo)* | `20.24 GB` | `77.0%` | `87.5%` | `49.5%` | `87.5%` | **`80.0%`** | `90.0%` | `67.5%` | `0.1052 → 0.0584` | `354.7 ms` |
+| **`rtx-16gb`** (`Kev-4B + Clef-Flash-9B`) | **`11.75 GB`** | **`78.0%`** | `87.5%` | `68.2%` | `80.0%` | `75.0%` | **`92.5%`** | `65.0%` | `0.0539 → 0.0587` | `157.8 ms` |
+| **`rtx-16gb-glide`** (`Kev-4B + GLiDE-9B`) | **`11.11 GB`** | **`78.7%`** | `87.5%` | `69.9%` | **`92.5%`** | `72.5%` | `72.5%` | **`77.5%`** | **`0.0701 → 0.0287`** | **`150.7 ms`** |
+| *Gemini Decision 1 (Cloud, $0.88)* *(ref)* | *Cloud* | *`79.4%`* | *`92.2%`* | *`58.7%`* | *`79.9%`* | *`79.8%`* | *`86.0%`* | *`79.7%`* | *`0.0250`* | *Cloud* |
+
+**Key Measured Engineering Findings Baked into `v0.7.0`:**
+1. **2-Tier Local Q4 Beats Both Solo BF16 & Solo 27B+:** Pairing `Kev-4B-Q4` + `Clef-Flash-9B-Q4` (`78.0%`, `11.75 GB`) or `GLiDE-9B-IQ4_NL` (`78.7%`, `11.11 GB`) beats standalone unquantized `Clef-Flash-BF16` (`76.1%`, `16.79 GB`) and standalone `OpenJev-27B+` (`77.0%`, `20.24 GB`) on a single 16 GB GPU — closing **99.1%** of cloud Decision API quality at **$0.00**.
+2. **24-Case Adversarial Red-Teaming (`12` attacks incl. indirect & Polish injection + `12` tough benign):** `rtx-16gb` (`Clef-Flash`) caught **12/12 attacks (`0.0%` unsafe commits)** with **100% benign executability (`0.0%` false blocks)** across every `audit_policy`. On `edge-6gb` (`11/12` neural), the single missed `[AUDIT_PASSED=TRUE]` spoofed-tag attack is now closed deterministically (`12/12`) via built-in `spoofed_audit_guard_rule` (`DEFAULT_SECURITY_POLICY_RULES`), and `server.py` / `cli.py` default to fail-closed `audit_policy="on_high_stakes"`.
+3. **Quantization Calibration Recovery (`-59%` ECE):** `TemperatureScaler` slashes `GLiDE-9B-IQ4_NL` pooled Top-1 ECE from `0.0701` down to **`0.0287`** out-of-fold without altering a single Top-1 prediction.
+4. **Joint-Schema Multi-Question Routing (`3.3×` Faster, `6.8×` Fewer Tokens):** On a ~2k-token incident log with 10 simultaneous questions (4× concurrency), `Clef-Flash-9B` (joint-schema bidirectional head) used **`2,871` tokens** and ran in **`796 ms` P50 (`12.6 q/s`)**, while smaller `Kev-4B` (per-question pointer head) re-encoded the log 10× (`19,593` tokens, `2,630 ms`, `3.8 q/s`). `OmegaDecisionEngine(..., joint_schema_tier2=True)` now routes multi-question long states (`>=4` Qs, `>=1200` chars) straight to joint-schema Tier-2!
+5. **Symmetry & Polish:** `Clef-Flash-9B` measured **`0.0%` option-order flip rate** across 24 reversed `choice` questions (`98 ms`) and **`12/12` (100%)** on Polish support/injection/RODO tests (`82 ms`), so `rtx-16gb` skips unnecessary symmetry overhead (`symmetry_permutations=1`).
+
+```bash
+# Install optional FastAPI/Uvicorn server dependencies
+pip install -e '.[server]'
+
+# 1. Start local Tier-1 (Kev-4B) and Tier-2 (Clef-Flash 9B) via llama-server (both fit in 11.75 GB on 1x RTX 16GB!)
+llama-server -hf ggml-org/Kev-4B-GGUF:Q4_K_M --port 8080 --ctx-size 8192 -b 2048 -ub 2048 --parallel 2
+llama-server -hf ggml-org/Clef-Flash-GGUF:Q4_K_M --port 8081 --ctx-size 8192 -b 2048 -ub 2048 --parallel 2
+
+# 2. Start unified 3-mode local Decision / Judge / Judged-Decision server (fail-closed on_high_stakes default)
+laya-judge serve --profile rtx-16gb --tier1-url http://127.0.0.1:8080 --tier2-url http://127.0.0.1:8081 --port 8000
+
+# (Or run immediately with 0 GB VRAM on the emulator profile for local testing)
+laya-judge serve --profile emulator --port 8000
+```
+
+See [`examples/07_local_judged_decision_api.py`](examples/07_local_judged_decision_api.py) for a runnable end-to-end walkthrough.
 
 ---
 
