@@ -1,19 +1,57 @@
-# Laya-as-a-Judge ⚡⚖️
+# Laya-as-a-Judge v1.0.0 ⚡⚖️
 
-[![Version](https://img.shields.io/badge/Version-0.7.0-0ea5e9.svg)](#100-local-text-only-api-decision-judge--hybrid-the-judged-decision--v070)
+[![Version](https://img.shields.io/badge/Release-v1.0.0_Stable-10b981.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
 [![Output Tokens](https://img.shields.io/badge/Output_Tokens-0-orange.svg)](#the-logic-behind-it-architecture--math)
-[![Latency](https://img.shields.io/badge/Latency-7--14ms-success.svg)](#performance--benchmarks)
-[![Cloud Cost](https://img.shields.io/badge/Cloud_Cost-%240.00-gold.svg)](#reasoning-why-its-worth-doing-and-using)
+[![Local 16GB](https://img.shields.io/badge/Local_1x16GB_%240-78.7%25_avg-0ea5e9.svg)](#100-local-text-only-api-decision-judge--hybrid-the-judged-decision--v070)
+[![Red-Team](https://img.shields.io/badge/Red--Team-12%2F12_Caught_(0%25_FP)-10b981.svg)](#measured-live-local-gpu-benchmarks-000-cloud-cost-5-experiments)
+[![Top-1 ECE](https://img.shields.io/badge/Top--1_ECE-0.0234--0.0287-0284c7.svg)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
 [![CI](https://github.com/radeksixi/laya-as-judge/actions/workflows/ci.yml/badge.svg)](https://github.com/radeksixi/laya-as-judge/actions)
-[![Benchmarks](https://img.shields.io/badge/vs_Gemini_Decision_1-11%2F11_Wins-10b981.svg)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
-[![Top-1 ECE](https://img.shields.io/badge/Top--1_ECE-0.0234-0284c7.svg)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
-[![Ecosystem: sixi.ai](https://img.shields.io/badge/Used_with-sixi.ai-0ea5e9.svg)](https://sixi.ai)
+[![Benchmarks](https://img.shields.io/badge/Laya--Omega_vs_Gemini_Dec_1-11%2F11_Wins-10b981.svg)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
+[![Ecosystem: sixi.ai](https://img.shields.io/badge/Used_with-sixi.ai_%2F_Assure-0ea5e9.svg)](https://sixi.ai/en/assure/)
 
-> **Blazing fast, calibrated LLM and AI agent evaluation using [Laya](https://huggingface.co/convaiinnovations/laya) typed decision models, local `Vega-U 0.8B` Test-Time Training, and the hybrid `Laya-Omega` selective multimodal cascade—used in production alongside [sixi.ai](https://sixi.ai).**
+![Laya-as-a-Judge v1.0.0 Platform Architecture — Decision API, Judge API, and Hybrid The Judged Decision](assets/laya-v1-platform-hero.png)
+
+> **One open-source, zero-output-token Decision, Judge & Governance API — built for both solo developers (`$0` on a 6 GB edge or single 16 GB GPU) and air-gapped regulated enterprises (EU AI Act / DORA / NIS2 / [Sixi Assure](https://sixi.ai/en/assure/)).**
 >
-> Inspired by and built for native local runtimes like [mizorewww/laya-mlx](https://github.com/mizorewww/laya-mlx) on Apple Silicon and NVIDIA CUDA (`TorchBackend` / `VegaBackend`).
+> **Read the write-ups:** [v1.0.0 — Built for Everyone & Regulated Enterprise](https://radeksixi.github.io/laya-as-judge-1-0-decision-judge-governance-for-everyone-and-enterprise/) · [v0.7.0 — 5 Live Local-GPU Experiments ($0 Cloud)](https://radeksixi.github.io/laya-as-judge-0-7-local-decision-api-five-experiments/) · [v0.4.0 — Laya-Omega 11/11 Multimodal Benchmarks](https://radeksixi.github.io/laya-as-judge-omega-11-of-11-benchmarks/)
+
+---
+
+## What Laya-as-a-Judge v1.0.0 Offers (API & Core Features)
+
+Software rarely needs an autoregressive LLM writing 250 tokens of prose just to route a ticket, block a prompt injection, score RAG faithfulness, or approve a tool call. **`laya-as-judge v1.0.0`** ships a **Python SDK**, **CLI (`laya-judge`)**, and **FastAPI HTTP server (`laya-judge serve`)** exposing **three unified, zero-output-token modes**:
+
+### 1. Three Unified API Modes
+
+| Mode | HTTP Endpoint(s) | Python / CLI Entry | What It Does | Output Contract |
+|---|---|---|---|---|
+| **Mode 1 · Decision API** *(Cloud Drop-in)* | `POST /v1/decisions`<br>`POST /v1/systemone` | `SystemOneHTTPBackend`<br>`OmegaDecisionEngine` | Drop-in local replacement for TypeSafe Jev, Google, and Azure Decisions APIs (`state`/`input` & `noul`/`bool` aliases) | Strictly typed `noul`, `choice`, `score` answers + calibrated simplex probabilities (`0` output tokens, `0%` parse failures) |
+| **Mode 2 · Judge API** *(Eval & Guardrails)* | `POST /v1/judge` | `FaithfulnessJudge`, `SafetyGuardJudge`, `PairwiseComparisonJudge`, `AgentTrajectoryJudge`, `CustomJudge`, `laya-judge eval` | 6 built-in evaluation presets + declarative custom rubrics, inline sub-15 ms guardrails, JSONL batch eval, and multi-task benchmark suite | `passed`, typed `judgements`, Shannon-entropy confidence, Top-1 probability, latency & token accounting |
+| **Mode 3 · Hybrid ("The Judged Decision")** *(Governance Gate)* | `POST /v1/judged-decision` | `JudgedDecisionEngine`<br>`laya-judge judged-decision` | **Decide → Cross-Family Verify → Orthogonal Judge → Deterministic Policy Rules** answering *"Is this proposed action safe & grounded to commit?"* | 4-way `ActionGate` (**`COMMIT`** / **`FALLBACK`** / **`ABSTAIN`** / **`BLOCK`**), `effective_decision`, `calibrated_risk`, full JSON `audit_trace` |
+
+### 2. Platform Capabilities — From Solo GPU to Air-Gapped Enterprise
+
+| Capability | Included in `v1.0.0` | Measured / Operational Guarantee |
+|---|---|---|
+| **Curated Local Hardware Profiles (`$0.00`)** | `edge-6gb`, `rtx-16gb`, `rtx-16gb-glide`, `workstation-24gb`, `emulator` (`laya-judge profiles`) | Fits **5.88 GB** (Jetson Orin Nano / RTX 8 GB → `61.6%`, `88 ms`) and **11.1–11.8 GB** (1× RTX 16 GB → **`78.0–78.7%`**, `99.1%` of Cloud Decision API) |
+| **Deterministic-First, Fail-Closed Security** | Built-in `spoofed_audit_guard_rule` (`DEFAULT_SECURITY_POLICY_RULES`), custom `policy_rules`, fail-closed `audit_policy="on_high_stakes"` | **`12 / 12` adversarial red-team attacks caught**, **`0.0%` false blocks**, **`100%` benign executability** (`rtx-16gb`) |
+| **Probabilistic Calibration (`Top-1` Invariant)** | `TemperatureScaler`, 10-fold OOF `MetaCalibrator`, `ClassMultiplierOptimizer`, `top1_ece`, `brier_score`, `aurc` | Cuts 4-bit Q4 Top-1 ECE by **59%** (`0.0701 → 0.0287`); **`0.0234`** OOF ECE on `Laya-Omega` |
+| **Joint-Schema Multi-Question Fast Routing** | `OmegaDecisionEngine(..., joint_schema_tier2=True)` auto-routes `>=4` Qs on `>=1200`-char states straight to joint-schema Tier-2 | **`3.3×` faster** sequentially (`796 ms` vs `2,630 ms`), **`5.1×` faster** at 4× concurrency, **`6.8×` fewer tokens** (`12.6` vs `3.8 q/s`) |
+| **Hybrid Multimodal Cascade (`Laya-Omega`)** | Local CUDA (`Laya` + `Vega-U 0.8B` disjoint TTT) + selective packed Gemini (`Text + Vision + Audio + Video`) | **`11 / 11` wins** vs. Gemini Decision 1 across 2,250 HF questions (`$0.77` vs `$0.88`) |
+| **Enterprise Governance & Zero Lock-In** | 100% air-gapped local option, JSON `audit_trace`, Apache-2.0, operational endpoints (`GET /health`, `/v1/models`, `/v1/profiles`) | Maps cleanly to **EU AI Act** Art. 12/14 logging & oversight, **DORA / NIS2**, **GDPR/RODO**, and [**Sixi Assure**](https://sixi.ai/en/assure/) |
+
+```bash
+# Try all 3 API modes immediately with 0 GB VRAM (no downloads)
+pip install -e '.[server]'
+laya-judge serve --profile emulator --port 8000
+
+# Or deploy 100% locally on 1x RTX 16GB ($0 cloud, 11.75 GB VRAM, 78.0% avg, 12/12 red-team)
+llama-server -hf ggml-org/Kev-4B-GGUF:Q4_K_M --port 8080 --ctx-size 8192 -b 2048 -ub 2048 --parallel 2
+llama-server -hf ggml-org/Clef-Flash-GGUF:Q4_K_M --port 8081 --ctx-size 8192 -b 2048 -ub 2048 --parallel 2
+laya-judge serve --profile rtx-16gb --tier1-url http://127.0.0.1:8080 --tier2-url http://127.0.0.1:8081 --port 8000
+```
 
 ---
 
@@ -74,8 +112,9 @@ print(summary.to_json())
 
 ## Table of Contents
 
-- [Decision Benchmark Suite (`Laya-Omega` v0.4.0 — 11/11 vs Gemini Decision 1)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
-- [100% Local Text-Only API: Decision, Judge & Hybrid ("The Judged Decision")](#100-local-text-only-api-decision-judge--hybrid-the-judged-decision)
+- [What Laya-as-a-Judge v1.0.0 Offers (API & Core Features)](#what-laya-as-a-judge-v100-offers-api--core-features)
+- [Decision Benchmark Suite (`Laya-Omega` — 11/11 vs Gemini Decision 1)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
+- [100% Local Text-Only API: Decision, Judge & Hybrid ("The Judged Decision")](#100-local-text-only-api-decision-judge--hybrid-the-judged-decision--v070)
 - [The Problem: The "Autoregressive Tax" of LLM-as-a-Judge](#the-problem-the-autoregressive-tax-of-llm-as-a-judge)
 - [The Solution: Laya as a Judge](#the-solution-laya-as-a-judge)
 - [The Logic Behind It (Architecture & Math)](#the-logic-behind-it-architecture--math)

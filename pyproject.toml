@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "laya-as-judge"
-version = "0.7.0"
-description = "Calibrated local & hybrid Decision, Judge, and Judged-Decision API engine (Decision /v1/decisions, Judge /v1/judge, Hybrid /v1/judged-decision, and Laya-Omega cascade) used alongside sixi.ai"
+version = "1.0.0"
+description = "Production-ready, zero-output-token Decision, Judge, and Governance API engine (/v1/decisions, /v1/judge, /v1/judged-decision & hybrid Laya-Omega) — from $0 local edge to air-gapped enterprise, built alongside sixi.ai"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -27,8 +27,9 @@ keywords = [
     "ai-governance"
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -36,6 +37,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
     "Topic :: Software Development :: Testing",
 ]
 dependencies = [
