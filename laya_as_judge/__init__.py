@@ -25,7 +25,27 @@ from .calibration import (
     top1_ece,
 )
 from .cascade import CascadedJudge, has_unsupported_modality
+from .decision_bench import (
+    build_decision_bench_command,
+    build_decisionbench_request,
+    evaluate_decisionbench_rows,
+    format_evaluation_request_issue,
+    parse_decisionbench_answer,
+    run_decision_bench_subprocess,
+    sample_contract_rows,
+    verify_systemone_contract,
+)
 from .dropins import DEFAULT_MODERATION_CATEGORIES, CandidateRankerEngine, ModerationAdapter
+from .integrations import (
+    LayaJudgedGateNode,
+    LayaToolAbstainError,
+    LayaToolBlockedError,
+    LayaToolGateMiddleware,
+    laya_gate_router,
+    laya_tool_guard,
+    make_decision_router,
+)
+from .rail_guard import RailGuardEvaluator, load_rail_guard_dataset
 from .engine import (
     BaseDecisionEngine,
     EmulatorBackend,
@@ -82,7 +102,7 @@ from .types import (
     ScoreResult,
 )
 
-__version__ = "1.1.0.dev0"
+__version__ = "1.1.0"
 
 __all__ = [
     # Judges
@@ -116,6 +136,25 @@ __all__ = [
     "CandidateRankerEngine",
     "ModerationAdapter",
     "DEFAULT_MODERATION_CATEGORIES",
+    # Integrations (FastMCP & LangGraph)
+    "LayaToolBlockedError",
+    "LayaToolAbstainError",
+    "LayaToolGateMiddleware",
+    "laya_tool_guard",
+    "make_decision_router",
+    "LayaJudgedGateNode",
+    "laya_gate_router",
+    # External Benchmark Harnesses (DecisionBench & RAIL Guard)
+    "build_decisionbench_request",
+    "parse_decisionbench_answer",
+    "sample_contract_rows",
+    "verify_systemone_contract",
+    "evaluate_decisionbench_rows",
+    "build_decision_bench_command",
+    "run_decision_bench_subprocess",
+    "format_evaluation_request_issue",
+    "RailGuardEvaluator",
+    "load_rail_guard_dataset",
     # Hybrid Cloud & Benchmarks
     "GeminiDecisionEngine",
     "CostTracker",

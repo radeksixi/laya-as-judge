@@ -1,11 +1,12 @@
-# Laya-as-a-Judge v1.0.0 ⚡⚖️
+# Laya-as-a-Judge v1.1.0 ⚡⚖️
 
-[![Version](https://img.shields.io/badge/Release-v1.0.0_Stable-10b981.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Release-v1.1.0_Stable-10b981.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
+[![HF Space](https://img.shields.io/badge/🤗_Live_Demo-Hugging_Face_Space-ffd21e.svg)](https://huggingface.co/spaces/rbai86/laya-as-judge-demo)
 [![Output Tokens](https://img.shields.io/badge/Output_Tokens-0-orange.svg)](#the-logic-behind-it-architecture--math)
 [![Local 16GB](https://img.shields.io/badge/Local_1x16GB_%240-78.7%25_avg-0ea5e9.svg)](#100-local-text-only-api-decision-judge--hybrid-the-judged-decision--v070)
-[![Red-Team](https://img.shields.io/badge/Red--Team-12%2F12_Caught_(0%25_FP)-10b981.svg)](#measured-live-local-gpu-benchmarks-000-cloud-cost-5-experiments)
+[![RAIL Guard](https://img.shields.io/badge/RAIL_Guard-95.0%25_F1_%7C_95.7%25_Tool_Intercept-10b981.svg)](#whats-new-in-v110-ecosystem-drop-ins-fastmcp--langgraph-decisionbench--rail-guard)
 [![Top-1 ECE](https://img.shields.io/badge/Top--1_ECE-0.0234--0.0287-0284c7.svg)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
 [![CI](https://github.com/radeksixi/laya-as-judge/actions/workflows/ci.yml/badge.svg)](https://github.com/radeksixi/laya-as-judge/actions)
 [![Benchmarks](https://img.shields.io/badge/Laya--Omega_vs_Gemini_Dec_1-11%2F11_Wins-10b981.svg)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
@@ -15,11 +16,33 @@
 
 > **One open-source, zero-output-token Decision, Judge & Governance API — built for both solo developers (`$0` on a 6 GB edge or single 16 GB GPU) and air-gapped regulated enterprises (EU AI Act / DORA / NIS2 / [Sixi Assure](https://sixi.ai/en/assure/)).**
 >
-> **Read the write-ups:** [v1.0.0 — Built for Everyone & Regulated Enterprise](https://radeksixi.github.io/laya-as-judge-1-0-decision-judge-governance-for-everyone-and-enterprise/) · [v0.7.0 — 5 Live Local-GPU Experiments ($0 Cloud)](https://radeksixi.github.io/laya-as-judge-0-7-local-decision-api-five-experiments/) · [v0.4.0 — Laya-Omega 11/11 Multimodal Benchmarks](https://radeksixi.github.io/laya-as-judge-omega-11-of-11-benchmarks/)
+> **Try live (CPU):** [🤗 Hugging Face Space Demo](https://huggingface.co/spaces/rbai86/laya-as-judge-demo) · **Read the write-ups:** [v1.0.0 — Built for Everyone & Regulated Enterprise](https://radeksixi.github.io/laya-as-judge-1-0-decision-judge-governance-for-everyone-and-enterprise/) · [v0.7.0 — 5 Live Local-GPU Experiments ($0 Cloud)](https://radeksixi.github.io/laya-as-judge-0-7-local-decision-api-five-experiments/) · [v0.4.0 — Laya-Omega 11/11 Multimodal Benchmarks](https://radeksixi.github.io/laya-as-judge-omega-11-of-11-benchmarks/)
 
 ---
 
-## What Laya-as-a-Judge v1.0.0 Offers (API & Core Features)
+## What's New in `v1.1.0` (Ecosystem Drop-Ins, FastMCP & LangGraph, DecisionBench & RAIL Guard)
+
+| Addition | Interface / Endpoint | Measured Highlight |
+|---|---|---|
+| **OSS Ecosystem Drop-In APIs** | `POST /v1/decisions/batch`, `/v1/moderations` (OpenAI), `/v1/rerank` (Cohere/vLLM), `/v1/rank` (Best-of-N), `GET /metrics` (Prometheus), `get_engine("hf-decision")` | **`7.97×` batch speedup** (`32` items), **`6.7 ms`** `/v1/decisions` & **`18.2 ms`** `/v1/rank` on `Laya-Q8_0` (`+575 MiB` VRAM, `0` output tokens) |
+| **FastMCP & LangGraph Middleware** | `LayaToolGateMiddleware`, `@laya_tool_guard`, `make_decision_router`, `LayaJudgedGateNode`, `laya_gate_router` | Zero-bloat duck-typed integrations wiring 4-way `COMMIT / FALLBACK / ABSTAIN / BLOCK` into MCP tools & `StateGraph` nodes in 5 lines |
+| **DecisionBench Native Runner** | `laya-judge decision-bench` · `examples/decisionbench_laya_adapter.py` | 100% native `jev-compatible-systemone-http-v1` parity across `noul`, `choice`, `score` for [`Hanno-Labs/decision-bench`](https://github.com/Hanno-Labs/decision-bench) (`run-system-one-http`) |
+| **RAIL Guard Benchmark Harness** | `laya-judge rail-guard --source hf` (`responsible-ai-labs/rail-guard-benchmark`) | Local `Kev-4B-Q4_K_M` (`$0.00`, 220 stratified HF cases): **Pool A `95.0% F1` (`90.5%` adv catch, `0.0%` benign FPR)** · **Pool B `95.7%` unsafe tool-call intercept (`91.4%` gap-potential)** |
+
+```python
+# 5-line FastMCP tool guard + LangGraph conditional-edge router (0 output tokens)
+from laya_as_judge import LayaToolGateMiddleware, LayaJudgedGateNode, laya_gate_router, make_decision_router, get_engine
+
+engine = get_engine("systemone", base_url="http://127.0.0.1:8080")
+mcp.add_middleware(LayaToolGateMiddleware(engine, high_stakes_tools=["issue_refund", "delete_account"]))
+graph.add_conditional_edges("triage", make_decision_router(engine, routes=["billing", "shipping", "security"]))
+graph.add_node("governance_gate", LayaJudgedGateNode(engine))
+graph.add_conditional_edges("governance_gate", laya_gate_router)  # commit / fallback / abstain / block
+```
+
+---
+
+## What Laya-as-a-Judge Offers (API & Core Features)
 
 Software rarely needs an autoregressive LLM writing 250 tokens of prose just to route a ticket, block a prompt injection, score RAG faithfulness, or approve a tool call. **`laya-as-judge v1.0.0`** ships a **Python SDK**, **CLI (`laya-judge`)**, and **FastAPI HTTP server (`laya-judge serve`)** exposing **three unified, zero-output-token modes**:
 

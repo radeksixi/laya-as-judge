@@ -637,5 +637,127 @@ def judged_decision_cmd(
     console.print(rep.to_json(indent=2))
 
 
+@main.command("decision-bench")
+@click.option("--base-url", default=None, help="Live `laya-judge serve` URL to verify or benchmark.")
+@click.option(
+    "--profile",
+    "-p",
+    type=click.Choice(list(HARDWARE_PROFILES.keys())),
+    default="rtx-16gb-glide",
+    show_default=True,
+    help="Target hardware profile name.",
+)
+@click.option("--decision-bench-dir", default=None, help="Path to local `Hanno-Labs/decision-bench` repository.")
+@click.option("--output-dir", default="./decisionbench_results", show_default=True, help="Output directory for results.")
+@click.option("--concurrency", default=8, show_default=True, type=int, help="Concurrent HTTP requests.")
+@click.option("--smoke/--full", default=True, show_default=True, help="Run DecisionBench smoke split or full suite.")
+@click.option("--verify-only", is_flag=True, help="Verify the 3-primitive /v1/systemone wire contract only.")
+@click.option("--print-issue", is_flag=True, help="Print pre-filled Hanno-Labs/decision-bench evaluation issue.")
+def decision_bench_cmd(
+    base_url: Optional[str],
+    profile: str,
+    decision_bench_dir: Optional[str],
+    output_dir: str,
+    concurrency: int,
+    smoke: bool,
+    verify_only: bool,
+    print_issue: bool,
+):
+    """Verify `/v1/systemone` wire compatibility or run `Hanno-Labs/decision-bench` (`decisionbench.dev`)."""
+    import shlex
+    from .decision_bench import (
+        build_decision_bench_command,
+        evaluate_decisionbench_rows,
+        format_evaluation_request_issue,
+        run_decision_bench_subprocess,
+        sample_contract_rows,
+        verify_systemone_contract,
+    )
+
+    if print_issue:
+        click.echo(format_evaluation_request_issue(profile=profile, version=f"v{__version__}"))
+        return
+
+    if base_url:
+        check = verify_systemone_contract(base_url, model=f"laya-as-judge/{profile}")
+        click.echo(json.dumps(check, indent=2))
+        if not check["passed"]:
+            raise click.ClickException("DecisionBench /v1/systemone contract check failed.")
+        if verify_only or not decision_bench_dir:
+            if not verify_only:
+                cmd = build_decision_bench_command(
+                    decision_bench_dir="/path/to/decision-bench",
+                    output_dir=output_dir,
+                    base_url=base_url,
+                    profile=profile,
+                    model_revision=f"v{__version__}",
+                    concurrency=concurrency,
+                    smoke=smoke,
+                )
+                click.echo("\nRun official DecisionBench harness:\n  " + shlex.join(cmd))
+            return
+        run_decision_bench_subprocess(
+            decision_bench_dir=decision_bench_dir,
+            output_dir=output_dir,
+            base_url=base_url,
+            profile=profile,
+            model_revision=f"v{__version__}",
+            concurrency=concurrency,
+            smoke=smoke,
+        )
+        return
+
+    decider, _, _, _ = build_local_profile_engines(profile_name=profile, fallback_to_emulator=True)
+    summary = evaluate_decisionbench_rows(decider, sample_contract_rows(), model=f"laya-as-judge/{profile}")
+    click.echo(json.dumps(summary, indent=2))
+
+
+@main.command("rail-guard")
+@click.option("--source", type=click.Choice(["hf", "fixture"]), default="hf", show_default=True)
+@click.option("--pool", type=click.Choice(["both", "a", "b"]), default="both", show_default=True)
+@click.option("--limit-per-file", default=20, show_default=True, type=int, help="Stratified cap per domain file (0 = full).")
+@click.option(
+    "--profile",
+    "-p",
+    type=click.Choice(list(HARDWARE_PROFILES.keys())),
+    default="emulator",
+    show_default=True,
+)
+@click.option("--tier1-url", default=None, help="Optional Tier-1 SystemOne HTTP server URL.")
+@click.option("--tier2-url", default=None, help="Optional Tier-2 SystemOne HTTP server URL.")
+@click.option("--seed", default=42, show_default=True, type=int)
+@click.option("--output", "-o", default=None, help="Optional JSON file path to save the RAIL Guard report.")
+def rail_guard_cmd(
+    source: str,
+    pool: str,
+    limit_per_file: int,
+    profile: str,
+    tier1_url: Optional[str],
+    tier2_url: Optional[str],
+    seed: int,
+    output: Optional[str],
+):
+    """Run the RAIL Guard Benchmark (`responsible-ai-labs/rail-guard-benchmark`) Pool A + Pool B."""
+    from .rail_guard import RailGuardEvaluator
+
+    decider, judge_eng, _, _ = build_local_profile_engines(
+        profile_name=profile,
+        tier1_url=tier1_url,
+        tier2_url=tier2_url,
+        fallback_to_emulator=True,
+    )
+    evaluator = RailGuardEvaluator(decider, judge_engine=judge_eng)
+    report = evaluator.run(
+        source=source,
+        pool=pool,
+        limit_per_file=(limit_per_file if limit_per_file > 0 else None),
+        seed=seed,
+    )
+    rendered = json.dumps(report, indent=2)
+    if output:
+        Path(output).write_text(rendered, encoding="utf-8")
+    click.echo(rendered)
+
+
 if __name__ == "__main__":
     main()

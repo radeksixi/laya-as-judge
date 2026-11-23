@@ -2,6 +2,30 @@
 
 All notable changes to **`laya-as-judge`** are documented in this file.
 
+## [1.1.0] — 2026-11-23
+
+**Ecosystem Drop-In APIs, FastMCP & LangGraph Integrations, DecisionBench Runner, RAIL Guard Benchmark & Hugging Face Space**
+
+### Added
+- **OSS Ecosystem Drop-In APIs (`laya_as_judge/dropins.py`, `laya_as_judge/server.py`):**
+  - `POST /v1/decisions/batch` (`7.97×` faster than 32 sequential HTTP calls on loopback)
+  - `POST /v1/moderations` (OpenAI-compatible moderation schema with deterministic `spoofed_audit_guard_rule`)
+  - `POST /v1/rerank` (Cohere / Jina / vLLM-compatible RAG document reranker)
+  - `POST /v1/rank` (`CandidateRankerEngine` Best-of-N tournament verifier)
+  - `GET /metrics` (Prometheus text exposition via `MetricsCollector`)
+  - `TransformersDecisionBackend` (`get_engine("hf-decision", ...)` adapter for Hugging Face `AutoModelForDecision` / `DecisionPipeline`)
+- **Framework Integrations (`laya_as_judge/integrations/`):**
+  - **FastMCP (`fastmcp.py`):** `LayaToolGateMiddleware` (FastMCP 2.x `on_call_tool` hook) and universal sync/async `@laya_tool_guard` decorator enforcing `COMMIT / FALLBACK / ABSTAIN / BLOCK`.
+  - **LangGraph (`langgraph.py`):** `make_decision_router` (conditional-edge router), `LayaJudgedGateNode`, and `laya_gate_router`.
+- **External Benchmark Harnesses:**
+  - **DecisionBench (`laya_as_judge/decision_bench.py`, `laya-judge decision-bench`, `examples/decisionbench_laya_adapter.py`):** Native `jev-compatible-systemone-http-v1` contract verification across all 3 primitives (`noul`, `choice`, `score`), `Hanno-Labs/decision-bench` `run-system-one-http` runner bridge, and pre-filled evaluation issue generator.
+  - **RAIL Guard Benchmark (`laya_as_judge/rail_guard.py`, `laya-judge rail-guard`):** Evaluates `responsible-ai-labs/rail-guard-benchmark` Pool A (content safety across 6 domains: **`95.0% F1`**, **`90.5%`** adversarial catch, **`0.0%` benign FPR** on local `Kev-4B-Q4_K_M` at `$0.00`) and Pool B (agent tool-call safety across 5 domains: **`95.7%`** unsafe tool-call intercept rate, **`91.4%`** gap-potential intercept rate via 4-way `ActionGate`).
+- **Distribution & Interactive Demo:**
+  - Lightweight CPU **Hugging Face Space** (`spaces/hf_demo/`, live at `https://huggingface.co/spaces/rbai86/laya-as-judge-demo`).
+  - Official PyPI Trusted Publishing GitHub Actions workflow (`.github/workflows/publish-pypi.yml`).
+
+---
+
 ## [1.0.0] — 2026-11-22
 
 **Full Official Stable Release** (`Development Status :: 5 - Production/Stable`) — one Apache-2.0 open-source **Decision, Judge & Governance API** built for both solo developers (`$0` local GPUs / edge) and regulated air-gapped enterprises (EU AI Act / DORA / NIS2 / Sixi Assure).
