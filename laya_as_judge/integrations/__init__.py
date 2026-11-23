@@ -11,6 +11,12 @@ from .langgraph import (
     laya_gate_router,
     make_decision_router,
 )
+from .sixi_scanner import (
+    SixiGuardRule,
+    SixiRegressionCase,
+    SixiScannerGuardPack,
+    load_sixi_scanner_rules,
+)
 
 __all__ = [
     "LayaToolBlockedError",
@@ -20,4 +26,8 @@ __all__ = [
     "make_decision_router",
     "LayaJudgedGateNode",
     "laya_gate_router",
+    "SixiGuardRule",
+    "SixiRegressionCase",
+    "SixiScannerGuardPack",
+    "load_sixi_scanner_rules",
 ]

@@ -41,8 +41,12 @@ from .integrations import (
     LayaToolAbstainError,
     LayaToolBlockedError,
     LayaToolGateMiddleware,
+    SixiGuardRule,
+    SixiRegressionCase,
+    SixiScannerGuardPack,
     laya_gate_router,
     laya_tool_guard,
+    load_sixi_scanner_rules,
     make_decision_router,
 )
 from .rail_guard import RailGuardEvaluator, load_rail_guard_dataset
@@ -81,6 +85,7 @@ from .judges import (
     FaithfulnessJudge,
     InstructionAdherenceJudge,
     PairwiseComparisonJudge,
+    RedTeamVerdictJudge,
     SafetyGuardJudge,
 )
 from .mcp_server import LayaMCPServer, mcp_tool_definitions
@@ -103,7 +108,7 @@ from .types import (
     ScoreResult,
 )
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 __all__ = [
     # Judges
@@ -114,6 +119,7 @@ __all__ = [
     "SafetyGuardJudge",
     "PairwiseComparisonJudge",
     "AgentTrajectoryJudge",
+    "RedTeamVerdictJudge",
     "CustomJudge",
     "CustomJudgeBuilder",
     "CalibratedJudge",
@@ -148,6 +154,11 @@ __all__ = [
     # MCP Stdio Server
     "LayaMCPServer",
     "mcp_tool_definitions",
+    # Closed-Loop sixi-scanner Integration
+    "SixiGuardRule",
+    "SixiRegressionCase",
+    "SixiScannerGuardPack",
+    "load_sixi_scanner_rules",
     # External Benchmark Harnesses (DecisionBench & RAIL Guard)
     "build_decisionbench_request",
     "parse_decisionbench_answer",

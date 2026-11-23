@@ -612,6 +612,7 @@ def profiles():
 )
 @click.option("--cross-verify/--no-cross-verify", default=False, help="Enable cross-family decision re-scoring on Judge engine.")
 @click.option("--ingress-guard/--no-ingress-guard", default=False, help="Enable fast ingress safety guardrail before Decider.")
+@click.option("--rules-file", default=None, help="Optional path to sixi-scanner --export-laya JSON rules file (or raw sixi-scanner JSON report).")
 @click.option("--fallback/--no-fallback", "fallback_to_emulator", default=True, show_default=True, help="Fall back to EmulatorBackend if neural runtime is not installed.")
 def serve(
     profile: str,
@@ -626,6 +627,7 @@ def serve(
     audit_policy: str,
     cross_verify: bool,
     ingress_guard: bool,
+    rules_file: Optional[str],
     fallback_to_emulator: bool,
 ):
     """Serve the 3-mode local text-only API: Decision (/v1/decisions, /v1/systemone), Judge (/v1/judge), and Hybrid (/v1/judged-decision)."""
@@ -650,6 +652,7 @@ def serve(
         default_audit_policy=audit_policy,
         cross_verify=cross_verify,
         run_ingress_guard=ingress_guard,
+        rules_file=rules_file,
     )
 
     hw = app.state.hardware_profile
@@ -882,6 +885,54 @@ def mcp_cmd(profile: Optional[str], tier1_url: Optional[str], tier2_url: Optiona
         fallback_to_emulator=True,
     )
     server.serve_stdio()
+
+
+@main.command("verify-sixi")
+@click.argument("rules_path", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--profile",
+    "-p",
+    type=click.Choice(list(HARDWARE_PROFILES.keys())),
+    default="emulator",
+    show_default=True,
+    help="Hardware profile for JudgedDecisionEngine.",
+)
+@click.option("--tier2-url", default=None, help="Optional local Tier-2 SystemOne server URL.")
+@click.option("--output", "-o", default=None, help="Optional JSON output path.")
+def verify_sixi_cmd(
+    rules_path: str,
+    profile: str,
+    tier2_url: Optional[str],
+    output: Optional[str],
+):
+    """Verify that exported `sixi-scanner` findings are 100% blocked by `laya-as-judge`."""
+    from .integrations.sixi_scanner import load_sixi_scanner_rules
+
+    pack = load_sixi_scanner_rules(rules_path)
+    decider, judge_eng, guard_eng, _ = build_local_profile_engines(
+        profile_name=profile,
+        tier2_url=tier2_url,
+        fallback_to_emulator=True,
+    )
+    engine = JudgedDecisionEngine(
+        decider_engine=decider,
+        judge_engine=judge_eng,
+        guard_engine=guard_eng,
+        policy_rules=pack.policy_rules(),
+    )
+    summary = pack.verify_regression(
+        engine,
+        benign_probes=[
+            {"user_message": "What are your business hours and return policy?"},
+            {"user_message": "Can you check the shipping status of my order?"},
+        ],
+    )
+    rendered = json.dumps(summary, indent=2)
+    if output:
+        Path(output).write_text(rendered, encoding="utf-8")
+    click.echo(rendered)
+    if not summary["all_closed"] or summary["benign_false_blocks"] > 0:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

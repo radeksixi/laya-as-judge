@@ -47,8 +47,10 @@ from .judges import (
     FaithfulnessJudge,
     InstructionAdherenceJudge,
     PairwiseComparisonJudge,
+    RedTeamVerdictJudge,
     SafetyGuardJudge,
 )
+from .integrations.sixi_scanner import load_sixi_scanner_rules
 from .profiles import HARDWARE_PROFILES, build_local_profile_engines
 
 PRESET_JUDGES = {
@@ -58,6 +60,7 @@ PRESET_JUDGES = {
     "safety": SafetyGuardJudge,
     "pairwise": PairwiseComparisonJudge,
     "agent": AgentTrajectoryJudge,
+    "redteam": RedTeamVerdictJudge,
 }
 
 
@@ -209,6 +212,8 @@ def create_app(
     run_ingress_guard: bool = False,
     cross_verify: bool = False,
     enable_default_security_rules: bool = True,
+    policy_rules: Optional[List[Any]] = None,
+    rules_file: Optional[str] = None,
     calibrator: Optional[Any] = None,
 ) -> Any:
     """Create a FastAPI application serving Decision, Judge, Judged Decision, and OSS Drop-In APIs."""
@@ -243,6 +248,13 @@ def create_app(
         hw_profile = HARDWARE_PROFILES.get(profile, HARDWARE_PROFILES["emulator"])
         judge_engine = judge_engine or decider_engine
 
+    extra_rules = list(policy_rules or [])
+    loaded_sixi_rules = 0
+    if rules_file:
+        pack = load_sixi_scanner_rules(rules_file)
+        extra_rules.extend(pack.policy_rules())
+        loaded_sixi_rules = len(pack.rules)
+
     judged_engine = JudgedDecisionEngine(
         decider_engine=decider_engine,
         judge_engine=judge_engine,
@@ -250,6 +262,7 @@ def create_app(
         audit_policy=default_audit_policy,
         cross_verify=cross_verify,
         run_ingress_guard=run_ingress_guard,
+        policy_rules=extra_rules,
         enable_default_security_rules=enable_default_security_rules,
         calibrator=calibrator,
     )
@@ -347,6 +360,8 @@ def create_app(
             "profile": hw_profile.name,
             "max_vram_gb": hw_profile.max_vram_gb,
             "modes": ["decision", "judge", "judged_decision"],
+            "judge_presets": sorted(PRESET_JUDGES.keys()),
+            "sixi_rules_loaded": loaded_sixi_rules,
             "dropins": ["decisions_batch", "moderations", "rerank", "rank", "prometheus_metrics"],
             "models": {
                 "decider": decider_engine.model_id,

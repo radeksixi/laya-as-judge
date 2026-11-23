@@ -2,6 +2,26 @@
 
 All notable changes to **`laya-as-judge`** are documented in this file.
 
+## [1.2.0] — 2026-11-23
+
+**Closed Attack → Guard → Prove Loop (`RedTeamVerdictJudge` + Native `sixi-scanner` Guardrail Rules)**
+
+### Added
+- **Dedicated `RedTeamVerdictJudge` Preset (`laya_as_judge/judges/redteam.py`, `POST /v1/judge` with `judge="redteam"`):**
+  - Zero-output-token 3-criterion red-team judge (`violation_confirmed: noul`, `is_benign_refusal: noul`, `severity: choice[none,low,medium,high,critical]`) with explicit refusal arbitration (`RedTeamVerdictJudge.summarize_verdict`) so polite refusals are never misclassified as breaks.
+  - Updated `EvaluationReport.passed` and `EmulatorBackend` to handle `is_benign_refusal` cleanly in offline CI.
+- **Native `sixi-scanner` Guardrail Loader (`laya_as_judge/integrations/sixi_scanner.py`):**
+  - `load_sixi_scanner_rules(path)` loads `sixi-scanner --export-laya <path>` guard packs (and raw `sixi-scanner --format json` reports as fallback) into deterministic, sub-millisecond `PolicyRuleFn` gates covering `prompt_block`, `tool_block`, `mcp_surface_block`, and `output_block`.
+  - Plugs directly into `JudgedDecisionEngine`, FastMCP `LayaToolGateMiddleware`, LangGraph `LayaJudgedGateNode`, and `create_app(rules_file=...)` / `laya-judge serve --rules-file <path>`.
+  - `SixiScannerGuardPack.verify_regression(...)` and CLI command **`laya-judge verify-sixi <rules.json>`** replay exported attack vectors + benign probes in CI to prove closure with `0%` benign false blocks.
+- **Runnable Example & Tests:** `examples/10_closed_redteam_guard_loop.py` and `tests/test_v12_redteam_and_sixi_loop.py`.
+
+### Live End-to-End Verification (`$0.00` Local GPU)
+- **Live `Qwen3.8-27B` (`Sixi-ASI 1.0.0`) × all 45 `sixi-scanner` techniques:** CUDA `RedTeamVerdictJudge` (`0` output tokens, `131.5 ms` avg) rejected 1 FP and confirmed 2 real findings (`probe.llm01.sleeper-memory`, `probe.llm01.ssti-echo`); exporting `--export-laya` closed **`2/2` findings (`still_open=0`, `0.29 ms` guard overhead, `0/10` benign false blocks)** on re-scan while `sixi-scanner diff` honestly caught 1 stochastic new finding (`probe.llm05.xss-reflection`).
+- **Live DVMCP Challenge 4 (FastMCP Rug Pull):** `sixi-scanner surface --rug-pull --export-laya` exported `get_weather` (`surface.mcp.rug-pull`); `LayaToolGateMiddleware` blocked `get_weather` deterministically in **`1.00 ms`** (`ActionGate.BLOCK`) while committing clean `get_system_time` (`ActionGate.COMMIT`).
+
+---
+
 ## [1.1.1] — 2026-11-23
 
 **Official MCP Stdio Server (`server.json`), GitHub Marketplace Action (`action.yml`), Native CI Gate + SARIF 2.1.0 & A2A v1.0 Agent Card**

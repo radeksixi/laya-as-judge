@@ -16,7 +16,7 @@ inputs:
     required: false
     default: "data/sample_rag_eval.jsonl"
   judge:
-    description: "Built-in judge preset for mode='eval' (faithfulness, safety, relevance, instruction, pairwise, agent)."
+    description: "Built-in judge preset for mode='eval' (faithfulness, safety, relevance, instruction, pairwise, agent, redteam)."
     required: false
     default: "faithfulness"
   gate-judgement:

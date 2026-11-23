@@ -6,6 +6,7 @@ from .custom import CustomJudge, CustomJudgeBuilder
 from .faithfulness import FaithfulnessJudge
 from .instruction import InstructionAdherenceJudge
 from .pairwise import PairwiseComparisonJudge
+from .redteam import RedTeamVerdictJudge
 from .relevance import AnswerRelevanceJudge
 from .safety import SafetyGuardJudge
 
@@ -17,6 +18,7 @@ __all__ = [
     "SafetyGuardJudge",
     "PairwiseComparisonJudge",
     "AgentTrajectoryJudge",
+    "RedTeamVerdictJudge",
     "CustomJudge",
     "CustomJudgeBuilder",
 ]

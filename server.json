@@ -3,7 +3,7 @@
   "name": "io.github.radeksixi/laya-as-judge",
   "title": "Laya-as-a-Judge",
   "description": "Zero-output-token Decision, Judge, Moderation, Rerank & 4-way ActionGate MCP server ($0 GPU).",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "websiteUrl": "https://pypi.org/project/laya-as-judge/",
   "repository": {
     "url": "https://github.com/radeksixi/laya-as-judge",
@@ -14,7 +14,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "laya-as-judge",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

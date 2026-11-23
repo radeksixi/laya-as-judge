@@ -1,9 +1,9 @@
 <!-- mcp-name: io.github.radeksixi/laya-as-judge -->
 
-# Laya-as-a-Judge v1.1.1 ⚡⚖️
+# Laya-as-a-Judge v1.2.0 ⚡⚖️
 
 [![PyPI](https://img.shields.io/pypi/v/laya-as-judge.svg?color=0ea5e9)](https://pypi.org/project/laya-as-judge/)
-[![Version](https://img.shields.io/badge/Release-v1.1.1_Stable-10b981.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Release-v1.2.0_Stable-10b981.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
 [![HF Space](https://img.shields.io/badge/🤗_Live_Demo-Hugging_Face_Space-ffd21e.svg)](https://huggingface.co/spaces/rbai86/laya-as-judge-demo)
@@ -19,7 +19,34 @@
 
 > **One open-source, zero-output-token Decision, Judge & Governance API — built for both solo developers (`$0` on a 6 GB edge or single 16 GB GPU) and air-gapped regulated enterprises (EU AI Act / DORA / NIS2 / [Sixi Assure](https://sixi.ai/en/assure/)).**
 >
-> **Try live (CPU):** [🤗 Hugging Face Space Demo](https://huggingface.co/spaces/rbai86/laya-as-judge-demo) · **Install:** [`pip install laya-as-judge`](https://pypi.org/project/laya-as-judge/) · **Read the write-ups:** [v1.1.0 — PyPI, 512 RAIL Guard Tests, FastMCP & LangGraph](https://radeksixi.github.io/laya-as-judge-1-1-pypi-rail-guard-fastmcp-langgraph/) · [v1.0.0 — Solo & Enterprise](https://radeksixi.github.io/laya-as-judge-1-0-decision-judge-governance-for-everyone-and-enterprise/) · [v0.7.0 — 5 Local-GPU Experiments](https://radeksixi.github.io/laya-as-judge-0-7-local-decision-api-five-experiments/) · [v0.4.0 — Laya-Omega 11/11](https://radeksixi.github.io/laya-as-judge-omega-11-of-11-benchmarks/)
+> **Try live (CPU):** [🤗 Hugging Face Space Demo](https://huggingface.co/spaces/rbai86/laya-as-judge-demo) · **Install:** [`pip install laya-as-judge`](https://pypi.org/project/laya-as-judge/) · **Read the write-ups:** [v1.2.0 — Closed Attack → Guard → Prove Loop (`sixi-scanner` ↔ `laya-as-judge`)](https://radeksixi.github.io/closed-loop-redteam-guard-sixi-scanner-laya-1-2/) · [v1.1.0 — PyPI, 512 RAIL Guard Tests, FastMCP & LangGraph](https://radeksixi.github.io/laya-as-judge-1-1-pypi-rail-guard-fastmcp-langgraph/) · [v1.0.0 — Solo & Enterprise](https://radeksixi.github.io/laya-as-judge-1-0-decision-judge-governance-for-everyone-and-enterprise/)
+
+---
+
+## What's New in `v1.2.0` (Closed Attack → Guard → Prove Loop with `sixi-scanner`)
+
+Pair [`laya-as-judge`](https://pypi.org/project/laya-as-judge/) with [`sixi-scanner v1.2.0`](https://github.com/radeksixi/sixi-scanner) to close red-team findings automatically in CI — **zero output tokens, zero cloud judge bills**:
+
+| Addition | Interface / CLI | Live Measured Proof (`$0.00` Local GPU) |
+|---|---|---|
+| **`RedTeamVerdictJudge` Preset** | `POST /v1/judge` (`judge="redteam"`) · `RedTeamVerdictJudge` | 3 orthogonal typed criteria (`violation_confirmed`, `is_benign_refusal`, `severity`), **`0` output tokens**, **`131.5 ms`** avg on CUDA `Laya` — explicitly separates polite refusals from real breaks |
+| **Deterministic Guard Loader** | `load_sixi_scanner_rules("guard-rules.json")` · `laya-judge serve --rules-file` | Loads `sixi-scanner --export-laya` packs into `JudgedDecisionEngine`, FastMCP `LayaToolGateMiddleware`, & LangGraph `LayaJudgedGateNode` (**`0.29 ms`** check overhead, **`0/10`** benign false blocks) |
+| **CI Regression Verifier** | `laya-judge verify-sixi guard-rules.json` · `pack.verify_regression(...)` | Live `Qwen3.8-27B` (45 probes): **`2/2` findings closed (`still_open=0`)** on `sixi-scanner diff`; live DVMCP C04 rug-pull (`get_weather`): blocked in **`1.00 ms`** (`ActionGate.BLOCK`) while clean `get_system_time` commits (`ActionGate.COMMIT`) |
+
+```bash
+# 1. ATTACK: scan target, confirm with zero-token RedTeamVerdictJudge, export guard rules
+laya-judge serve --profile rtx-16gb --port 8000
+sixi-scanner scan --url http://agent/v1/chat/completions --stateful --context agent.json \
+  --confirm-url http://127.0.0.1:8000/v1/judge --out baseline.json --export-laya guard-rules.json
+
+# 2. GUARD: verify closure in CI & load rules into Laya server / FastMCP / LangGraph
+laya-judge verify-sixi guard-rules.json
+laya-judge serve --profile rtx-16gb --rules-file guard-rules.json --port 8000
+
+# 3. PROVE: re-scan guarded agent and diff honestly
+sixi-scanner scan --url http://agent/v1/chat/completions --stateful --out after.json
+sixi-scanner diff baseline.json after.json
+```
 
 ---
 
