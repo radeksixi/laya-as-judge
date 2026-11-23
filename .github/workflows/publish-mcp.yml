@@ -1,24 +1,79 @@
 name: Publish to Official MCP Registry
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Publish to PyPI"]
+    types: [completed]
 
 permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: publish-mcp-registry
+  cancel-in-progress: false
+
 jobs:
   publish-mcp:
     name: Publish server.json to registry.modelcontextprotocol.io
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     env:
       MCP_PUBLISHER_VERSION: v1.8.16
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Check whether this version is already published
+        id: check
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.parse, urllib.request
+
+          with open("server.json", encoding="utf-8") as fh:
+              meta = json.load(fh)
+          name = meta["name"]
+          version = meta["version"]
+          pkg = meta["packages"][0]["identifier"]
+          url = (
+              "https://registry.modelcontextprotocol.io/v0/servers?search="
+              + urllib.parse.quote(pkg, safe="")
+          )
+          req = urllib.request.Request(url, headers={"User-Agent": "laya-as-judge-ci"})
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              data = json.load(resp)
+          published = any(
+              entry.get("server", {}).get("name") == name
+              and entry.get("server", {}).get("version") == version
+              for entry in data.get("servers", [])
+          )
+          print(f"MCP Registry check for {name}@{version}: published={published}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"already_published={'true' if published else 'false'}\n")
+              out.write(f"pkg={pkg}\n")
+              out.write(f"version={version}\n")
+          PY
+
+      - name: Wait for PyPI release visibility
+        if: steps.check.outputs.already_published != 'true'
+        run: |
+          set -euo pipefail
+          URL="https://pypi.org/pypi/${{ steps.check.outputs.pkg }}/${{ steps.check.outputs.version }}/json"
+          for i in $(seq 1 12); do
+            if curl -fsSL "$URL" >/dev/null 2>&1; then
+              echo "PyPI version is live: $URL"
+              exit 0
+            fi
+            echo "Waiting for PyPI propagation ($i/12): $URL"
+            sleep 5
+          done
+          echo "Timed out waiting for PyPI version: $URL" >&2
+          exit 1
 
       - name: Download mcp-publisher ${{ env.MCP_PUBLISHER_VERSION }}
+        if: steps.check.outputs.already_published != 'true'
         run: |
           set -euo pipefail
           archive="mcp-publisher_linux_amd64.tar.gz"
@@ -29,6 +84,7 @@ jobs:
           ./mcp-publisher --version || true
 
       - name: Authenticate via GitHub OIDC and publish to Official MCP Registry
+        if: steps.check.outputs.already_published != 'true'
         run: |
           set -euo pipefail
           ./mcp-publisher login github-oidc
