@@ -83,6 +83,7 @@ from .judges import (
     PairwiseComparisonJudge,
     SafetyGuardJudge,
 )
+from .mcp_server import LayaMCPServer, mcp_tool_definitions
 from .omega import OmegaDecisionEngine
 from .profiles import (
     HARDWARE_PROFILES,
@@ -102,7 +103,7 @@ from .types import (
     ScoreResult,
 )
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 __all__ = [
     # Judges
@@ -144,6 +145,9 @@ __all__ = [
     "make_decision_router",
     "LayaJudgedGateNode",
     "laya_gate_router",
+    # MCP Stdio Server
+    "LayaMCPServer",
+    "mcp_tool_definitions",
     # External Benchmark Harnesses (DecisionBench & RAIL Guard)
     "build_decisionbench_request",
     "parse_decisionbench_answer",

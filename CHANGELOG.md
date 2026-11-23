@@ -2,6 +2,18 @@
 
 All notable changes to **`laya-as-judge`** are documented in this file.
 
+## [1.1.1] — 2026-11-23
+
+**Official MCP Stdio Server (`server.json`), GitHub Marketplace Action (`action.yml`), Native CI Gate + SARIF 2.1.0 & A2A v1.0 Agent Card**
+
+### Added
+- **Zero-Dependency MCP Stdio Server (`laya_as_judge/mcp_server.py`, `uvx laya-as-judge mcp`):** Standard JSON-RPC 2.0 MCP server exposing `laya_decide`, `laya_judge`, `laya_judged_decision`, `laya_moderate`, and `laya_rerank` plus official MCP Registry manifest (`server.json`) and PyPI ownership tag (`<!-- mcp-name: io.github.radeksixi/laya-as-judge -->`).
+- **GitHub Marketplace Composite Action (`action.yml`) & Native CI Gate (`laya-judge eval --gate-judgement --max-failing --format sarif`):** Fail-closed CI threshold gating (`0` pass / `1` fail / `2` error) and SARIF 2.1.0 output for GitHub Code Scanning.
+- **A2A v1.0 Discovery & JSON-RPC Endpoint (`laya_as_judge/server.py`):** Serves `GET /.well-known/agent-card.json` (plus legacy `/.well-known/agent.json`) and `POST /a2a/v1` (`tasks/send` & `message/send`).
+- Added `laya-as-judge` console script alias alongside `laya-judge` so `uvx laya-as-judge mcp` works without `--from`.
+
+---
+
 ## [1.1.0] — 2026-11-23
 
 **Ecosystem Drop-In APIs, FastMCP & LangGraph Integrations, DecisionBench Runner, RAIL Guard Benchmark & Hugging Face Space**

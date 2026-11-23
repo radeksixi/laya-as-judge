@@ -1,0 +1,48 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.radeksixi/laya-as-judge",
+  "title": "Laya-as-a-Judge",
+  "description": "Zero-output-token Decision, Judge, Moderation, Rerank & 4-way ActionGate MCP server ($0 GPU).",
+  "version": "1.1.1",
+  "websiteUrl": "https://pypi.org/project/laya-as-judge/",
+  "repository": {
+    "url": "https://github.com/radeksixi/laya-as-judge",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "laya-as-judge",
+      "version": "1.1.1",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "LAYA_PROFILE",
+          "description": "Hardware VRAM profile (emulator, edge-6gb, rtx-16gb, rtx-16gb-glide).",
+          "isRequired": false,
+          "default": "emulator"
+        },
+        {
+          "name": "LAYA_TIER1_URL",
+          "description": "Optional local Tier-1 llama-server /v1/systemone URL (e.g. http://127.0.0.1:8080).",
+          "isRequired": false
+        },
+        {
+          "name": "LAYA_TIER2_URL",
+          "description": "Optional local Tier-2 llama-server /v1/systemone URL (e.g. http://127.0.0.1:8081).",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

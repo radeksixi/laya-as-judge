@@ -20,9 +20,15 @@ Requires optional server dependencies: `pip install 'laya-as-judge[server]'`.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from typing import Any, Dict, List, Mapping, Optional, Union
+
+try:
+    from fastapi import Request as FastAPIRequest
+except ImportError:  # pragma: no cover - optional server dependency
+    FastAPIRequest = Any  # type: ignore[misc,assignment]
 
 from .dropins import CandidateRankerEngine, ModerationAdapter
 from .engine.base import BaseDecisionEngine
@@ -207,7 +213,7 @@ def create_app(
 ) -> Any:
     """Create a FastAPI application serving Decision, Judge, Judged Decision, and OSS Drop-In APIs."""
     try:
-        from fastapi import FastAPI, HTTPException
+        from fastapi import FastAPI, HTTPException, Request
         from fastapi.responses import PlainTextResponse
         import pydantic  # noqa: F401
     except ImportError as exc:
@@ -382,6 +388,125 @@ def create_app(
     @app.get("/metrics")
     def prometheus_metrics() -> Any:
         return PlainTextResponse(metrics.render_prometheus(), media_type="text/plain; version=0.0.4")
+
+    # --- A2A v1.0 Discovery (Agent Card) & JSON-RPC Task Endpoint ---
+
+    def _build_agent_card(request: FastAPIRequest) -> Dict[str, Any]:
+        base = str(request.base_url).rstrip("/")
+        return {
+            "name": "Laya-as-a-Judge",
+            "description": (
+                "Zero-output-token Decision, Judge, Moderation, Rerank & 4-way ActionGate "
+                "(COMMIT/FALLBACK/ABSTAIN/BLOCK) evaluation agent."
+            ),
+            "version": __version__,
+            "supportedInterfaces": [
+                {
+                    "url": f"{base}/a2a/v1",
+                    "protocolBinding": "JSONRPC",
+                    "protocolVersion": "1.0",
+                }
+            ],
+            "capabilities": {
+                "streaming": False,
+                "pushNotifications": False,
+                "extendedAgentCard": False,
+            },
+            "defaultInputModes": ["text/plain", "application/json"],
+            "defaultOutputModes": ["application/json"],
+            "skills": [
+                {
+                    "id": "decision-routing",
+                    "name": "Zero-Token Decision Routing",
+                    "description": "Typed noul, choice, and score decisions with calibrated simplex probabilities.",
+                    "tags": ["decision", "routing", "classification", "zero-token"],
+                },
+                {
+                    "id": "judge-evaluation",
+                    "name": "Calibrated Judge Evaluation",
+                    "description": "RAG faithfulness, safety, pairwise, relevance, instruction, and agent trajectory scoring.",
+                    "tags": ["eval", "rag", "judge", "guardrails"],
+                },
+                {
+                    "id": "judged-decision-gate",
+                    "name": "4-Way Agent ActionGate",
+                    "description": "Decide -> Orthogonal Judge -> Deterministic Policy Rules returning COMMIT, FALLBACK, ABSTAIN, or BLOCK.",
+                    "tags": ["governance", "mcp", "tool-safety", "action-gate"],
+                },
+                {
+                    "id": "content-moderation",
+                    "name": "Content & Prompt-Injection Moderation",
+                    "description": "OpenAI-compatible moderation with deterministic anti-spoofing rules.",
+                    "tags": ["moderation", "safety", "prompt-injection"],
+                },
+            ],
+        }
+
+    @app.get("/.well-known/agent-card.json")
+    def a2a_agent_card(request: FastAPIRequest) -> Dict[str, Any]:
+        """A2A v1.0 Agent Card discovery document."""
+        return _build_agent_card(request)
+
+    @app.get("/.well-known/agent.json")
+    def a2a_agent_card_legacy(request: FastAPIRequest) -> Dict[str, Any]:
+        """Legacy A2A draft alias for Agent Card discovery."""
+        return _build_agent_card(request)
+
+    @app.post("/a2a/v1")
+    def a2a_jsonrpc(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """A2A v1.0 JSON-RPC 2.0 handler (`tasks/send` and `message/send`)."""
+        t0 = time.perf_counter()
+        req_id = payload.get("id")
+        method = str(payload.get("method", ""))
+        params = payload.get("params") or {}
+        if method not in ("tasks/send", "message/send"):
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": -32601, "message": f"Unsupported A2A method: {method}"},
+            }
+
+        message = params.get("message") or {}
+        parts = message.get("parts") or []
+        text_chunks: List[str] = []
+        data_payload: Optional[Dict[str, Any]] = None
+        for part in parts:
+            if isinstance(part, Mapping):
+                if "data" in part and isinstance(part["data"], Mapping):
+                    data_payload = dict(part["data"])
+                elif "text" in part:
+                    text_chunks.append(str(part["text"]))
+
+        if data_payload and "questions" in data_payload and "state" in data_payload:
+            norm_q = normalize_decision_questions(data_payload["questions"])
+            res = judged_engine.evaluate(
+                data_payload["state"],
+                norm_q,
+                audit_policy=data_payload.get("audit_policy"),
+                high_stakes_actions=data_payload.get("high_stakes_actions"),
+                fallback_map=data_payload.get("fallback_map"),
+            )
+            artifact = res.to_dict()
+        else:
+            joined = "\n".join(text_chunks) if text_chunks else json.dumps(data_payload or {})
+            artifact = moderation_adapter.moderate(joined)
+
+        metrics.record_request("/a2a/v1", (time.perf_counter() - t0) * 1000.0)
+        task_id = str(params.get("id") or f"laya_a2a_{int(time.time() * 1000)}")
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "id": task_id,
+                "status": {"state": "completed"},
+                "artifacts": [
+                    {
+                        "name": "laya-evaluation",
+                        "parts": [{"type": "data", "data": artifact}],
+                    }
+                ],
+            },
+        }
 
     # --- Mode 1: Decision API ---
 

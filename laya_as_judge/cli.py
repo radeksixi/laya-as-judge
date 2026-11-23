@@ -83,10 +83,41 @@ def main():
     "output_path",
     type=click.Path(),
     default=None,
-    help="Output file path (JSON or JSONL) to save evaluation results.",
+    help="Output file path (JSON, JSONL, or SARIF 2.1.0) to save evaluation results.",
 )
-def eval(judge: str, input_text: Optional[str], file_path: Optional[str], backend: str, output_path: Optional[str]):
-    """Evaluate an input state or batch JSONL file."""
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["jsonl", "sarif"]),
+    default="jsonl",
+    show_default=True,
+    help="Batch output format ('jsonl' or 'sarif' 2.1.0 for GitHub Code Scanning).",
+)
+@click.option(
+    "--gate-judgement",
+    default=None,
+    help="CI gate mode: criterion name that must hold (e.g. 'is_faithful', 'is_safe').",
+)
+@click.option(
+    "--max-failing",
+    default=0.0,
+    show_default=True,
+    type=float,
+    help="Maximum allowed failing share in [0.0, 1.0] when --gate-judgement is set.",
+)
+def eval(
+    judge: str,
+    input_text: Optional[str],
+    file_path: Optional[str],
+    backend: str,
+    output_path: Optional[str],
+    output_format: str,
+    gate_judgement: Optional[str],
+    max_failing: float,
+):
+    """Evaluate an input state or batch JSONL file (with optional CI gate & SARIF 2.1.0 output)."""
+    import sys as _sys
+
     judge_cls = JUDGE_REGISTRY[judge]
     judge_instance = judge_cls(backend=backend)
 
@@ -96,7 +127,53 @@ def eval(judge: str, input_text: Optional[str], file_path: Optional[str], backen
             f"({type(judge_instance.engine).__name__}) on {file_path}...[/bold green]"
         )
         batch_evaluator = BatchEvaluator(judge=judge_instance)
-        report = batch_evaluator.evaluate_jsonl(file_path, output_path=output_path)
+        jsonl_target = output_path if (output_path and output_format == "jsonl") else None
+        report = batch_evaluator.evaluate_jsonl(file_path, output_path=jsonl_target)
+
+        if output_path and output_format == "sarif":
+            sarif_results = []
+            for idx, rep in enumerate(report.reports, start=1):
+                for crit_name, res in rep.judgements.items():
+                    failed = (isinstance(res, NoulResult) and not res.holds) or (
+                        gate_judgement is not None and crit_name == gate_judgement and not getattr(res, "holds", True)
+                    )
+                    if failed:
+                        sarif_results.append(
+                            {
+                                "ruleId": f"laya/{judge}/{crit_name}",
+                                "level": "error",
+                                "message": {
+                                    "text": f"Row {idx} failed '{crit_name}' (confidence={res.confidence:.3f}, backend={rep.backend})"
+                                },
+                                "locations": [
+                                    {
+                                        "physicalLocation": {
+                                            "artifactLocation": {"uri": str(file_path)},
+                                            "region": {"startLine": idx},
+                                        }
+                                    }
+                                ],
+                            }
+                        )
+            sarif_doc = {
+                "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+                "version": "2.1.0",
+                "runs": [
+                    {
+                        "tool": {
+                            "driver": {
+                                "name": "laya-as-judge",
+                                "version": __version__,
+                                "informationUri": "https://github.com/radeksixi/laya-as-judge",
+                            }
+                        },
+                        "results": sarif_results,
+                    }
+                ],
+            }
+            out_p = Path(output_path).expanduser()
+            out_p.parent.mkdir(parents=True, exist_ok=True)
+            out_p.write_text(json.dumps(sarif_doc, indent=2), encoding="utf-8")
 
         table = Table(title="Batch Evaluation Summary")
         table.add_column("Metric", style="cyan", no_wrap=True)
@@ -112,7 +189,28 @@ def eval(judge: str, input_text: Optional[str], file_path: Optional[str], backen
 
         console.print(table)
         if output_path:
-            console.print(f"[bold green]Saved batch results to {output_path}[/bold green]")
+            console.print(f"[bold green]Saved batch results ({output_format}) to {output_path}[/bold green]")
+
+        if gate_judgement:
+            if not (0.0 <= max_failing <= 1.0):
+                console.print("[bold red]CI gate error: --max-failing must be between 0.0 and 1.0[/bold red]")
+                _sys.exit(2)
+            total = len(report.reports)
+            if total == 0:
+                console.print("[bold red]CI gate error: 0 evaluated samples[/bold red]")
+                _sys.exit(2)
+            failing = 0
+            for rep in report.reports:
+                verdict = rep.judgements.get(gate_judgement)
+                if verdict is None or getattr(verdict, "holds", None) is not True:
+                    failing += 1
+            share = failing / total
+            verdict_str = "REFUSED" if share > max_failing else "PASSED"
+            console.print(
+                f"CI gate ({gate_judgement}): {failing}/{total} failing ({share:.1%}; limit {max_failing:.1%}) -> {verdict_str}"
+            )
+            if share > max_failing:
+                _sys.exit(1)
         return
 
     # Single item eval
@@ -757,6 +855,33 @@ def rail_guard_cmd(
     if output:
         Path(output).write_text(rendered, encoding="utf-8")
     click.echo(rendered)
+
+
+@main.command("mcp")
+@click.option(
+    "--profile",
+    "-p",
+    type=click.Choice(list(HARDWARE_PROFILES.keys())),
+    default=None,
+    help="Hardware profile (falls back to LAYA_PROFILE env var or 'emulator').",
+)
+@click.option("--tier1-url", default=None, help="Optional Tier-1 SystemOne server URL (or LAYA_TIER1_URL).")
+@click.option("--tier2-url", default=None, help="Optional Tier-2 SystemOne server URL (or LAYA_TIER2_URL).")
+def mcp_cmd(profile: Optional[str], tier1_url: Optional[str], tier2_url: Optional[str]):
+    """Run the zero-dependency Model Context Protocol (MCP) stdio JSON-RPC 2.0 server."""
+    import os
+    from .mcp_server import LayaMCPServer
+
+    eff_profile = profile or os.environ.get("LAYA_PROFILE") or "emulator"
+    eff_t1 = tier1_url or os.environ.get("LAYA_TIER1_URL")
+    eff_t2 = tier2_url or os.environ.get("LAYA_TIER2_URL")
+    server = LayaMCPServer(
+        profile=eff_profile,
+        tier1_url=eff_t1,
+        tier2_url=eff_t2,
+        fallback_to_emulator=True,
+    )
+    server.serve_stdio()
 
 
 if __name__ == "__main__":

@@ -1,7 +1,9 @@
-# Laya-as-a-Judge v1.1.0 ⚡⚖️
+<!-- mcp-name: io.github.radeksixi/laya-as-judge -->
+
+# Laya-as-a-Judge v1.1.1 ⚡⚖️
 
 [![PyPI](https://img.shields.io/pypi/v/laya-as-judge.svg?color=0ea5e9)](https://pypi.org/project/laya-as-judge/)
-[![Version](https://img.shields.io/badge/Release-v1.1.0_Stable-10b981.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Release-v1.1.1_Stable-10b981.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
 [![HF Space](https://img.shields.io/badge/🤗_Live_Demo-Hugging_Face_Space-ffd21e.svg)](https://huggingface.co/spaces/rbai86/laya-as-judge-demo)
@@ -30,6 +32,7 @@
 | **FastMCP & LangGraph Middleware** | `LayaToolGateMiddleware`, `@laya_tool_guard`, `make_decision_router`, `LayaJudgedGateNode`, `laya_gate_router` | Zero-bloat duck-typed integrations wiring 4-way `COMMIT / FALLBACK / ABSTAIN / BLOCK` into MCP tools & `StateGraph` nodes in 5 lines |
 | **DecisionBench Native Runner** | `laya-judge decision-bench` · `examples/decisionbench_laya_adapter.py` | 100% native `jev-compatible-systemone-http-v1` parity across `noul`, `choice`, `score` for [`Hanno-Labs/decision-bench`](https://github.com/Hanno-Labs/decision-bench) (`run-system-one-http`) |
 | **RAIL Guard Benchmark Harness** | `laya-judge rail-guard --source hf` (`responsible-ai-labs/rail-guard-benchmark`) | `$0.00` local GPU (512 real HF cases): **Pool A `95.0% F1` (`90.5%` adv catch, `0.0%` benign FPR on `Kev-4B`)** · **Full Pool B (`392/392` on `GLiDE-9B`): `94.6%` unsafe intercept, `89.9%` GAP caught, `70.7%` safe not hard-blocked** ([full per-domain write-up](https://radeksixi.github.io/laya-as-judge-1-1-pypi-rail-guard-fastmcp-langgraph/)) |
+| **MCP Stdio Server, A2A v1.0 & GitHub Action (`v1.1.1`)** | `uvx laya-as-judge mcp` (`server.json`) · `GET /.well-known/agent-card.json` & `POST /a2a/v1` · `uses: radeksixi/laya-as-judge@v1.1.1` (`action.yml`) | 5 native MCP tools (`laya_decide`, `laya_judge`, `laya_judged_decision`, `laya_moderate`, `laya_rerank`), A2A v1.0 Agent Card, and native CI gate (`--gate-judgement`, `--max-failing`, `--format sarif`) |
 
 ```python
 # 5-line FastMCP tool guard + LangGraph conditional-edge router (0 output tokens)
