@@ -1,5 +1,6 @@
 # Laya-as-a-Judge v1.1.0 ⚡⚖️
 
+[![PyPI](https://img.shields.io/pypi/v/laya-as-judge.svg?color=0ea5e9)](https://pypi.org/project/laya-as-judge/)
 [![Version](https://img.shields.io/badge/Release-v1.1.0_Stable-10b981.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
@@ -16,18 +17,19 @@
 
 > **One open-source, zero-output-token Decision, Judge & Governance API — built for both solo developers (`$0` on a 6 GB edge or single 16 GB GPU) and air-gapped regulated enterprises (EU AI Act / DORA / NIS2 / [Sixi Assure](https://sixi.ai/en/assure/)).**
 >
-> **Try live (CPU):** [🤗 Hugging Face Space Demo](https://huggingface.co/spaces/rbai86/laya-as-judge-demo) · **Read the write-ups:** [v1.0.0 — Built for Everyone & Regulated Enterprise](https://radeksixi.github.io/laya-as-judge-1-0-decision-judge-governance-for-everyone-and-enterprise/) · [v0.7.0 — 5 Live Local-GPU Experiments ($0 Cloud)](https://radeksixi.github.io/laya-as-judge-0-7-local-decision-api-five-experiments/) · [v0.4.0 — Laya-Omega 11/11 Multimodal Benchmarks](https://radeksixi.github.io/laya-as-judge-omega-11-of-11-benchmarks/)
+> **Try live (CPU):** [🤗 Hugging Face Space Demo](https://huggingface.co/spaces/rbai86/laya-as-judge-demo) · **Install:** [`pip install laya-as-judge`](https://pypi.org/project/laya-as-judge/) · **Read the write-ups:** [v1.1.0 — PyPI, 512 RAIL Guard Tests, FastMCP & LangGraph](https://radeksixi.github.io/laya-as-judge-1-1-pypi-rail-guard-fastmcp-langgraph/) · [v1.0.0 — Solo & Enterprise](https://radeksixi.github.io/laya-as-judge-1-0-decision-judge-governance-for-everyone-and-enterprise/) · [v0.7.0 — 5 Local-GPU Experiments](https://radeksixi.github.io/laya-as-judge-0-7-local-decision-api-five-experiments/) · [v0.4.0 — Laya-Omega 11/11](https://radeksixi.github.io/laya-as-judge-omega-11-of-11-benchmarks/)
 
 ---
 
-## What's New in `v1.1.0` (Ecosystem Drop-Ins, FastMCP & LangGraph, DecisionBench & RAIL Guard)
+## What's New in `v1.1.0` (PyPI, Ecosystem Drop-Ins, FastMCP & LangGraph, DecisionBench & RAIL Guard)
 
 | Addition | Interface / Endpoint | Measured Highlight |
 |---|---|---|
+| **PyPI & Zero-Setup HF Space** | [`pip install laya-as-judge`](https://pypi.org/project/laya-as-judge/) · [`rbai86/laya-as-judge-demo`](https://huggingface.co/spaces/rbai86/laya-as-judge-demo) | Official PyPI package (`[server]` extra, `uvx` ready) + zero-cold-start browser playground |
 | **OSS Ecosystem Drop-In APIs** | `POST /v1/decisions/batch`, `/v1/moderations` (OpenAI), `/v1/rerank` (Cohere/vLLM), `/v1/rank` (Best-of-N), `GET /metrics` (Prometheus), `get_engine("hf-decision")` | **`7.97×` batch speedup** (`32` items), **`6.7 ms`** `/v1/decisions` & **`18.2 ms`** `/v1/rank` on `Laya-Q8_0` (`+575 MiB` VRAM, `0` output tokens) |
 | **FastMCP & LangGraph Middleware** | `LayaToolGateMiddleware`, `@laya_tool_guard`, `make_decision_router`, `LayaJudgedGateNode`, `laya_gate_router` | Zero-bloat duck-typed integrations wiring 4-way `COMMIT / FALLBACK / ABSTAIN / BLOCK` into MCP tools & `StateGraph` nodes in 5 lines |
 | **DecisionBench Native Runner** | `laya-judge decision-bench` · `examples/decisionbench_laya_adapter.py` | 100% native `jev-compatible-systemone-http-v1` parity across `noul`, `choice`, `score` for [`Hanno-Labs/decision-bench`](https://github.com/Hanno-Labs/decision-bench) (`run-system-one-http`) |
-| **RAIL Guard Benchmark Harness** | `laya-judge rail-guard --source hf` (`responsible-ai-labs/rail-guard-benchmark`) | Local `Kev-4B-Q4_K_M` (`$0.00`, 220 stratified HF cases): **Pool A `95.0% F1` (`90.5%` adv catch, `0.0%` benign FPR)** · **Pool B `95.7%` unsafe tool-call intercept (`91.4%` gap-potential)** |
+| **RAIL Guard Benchmark Harness** | `laya-judge rail-guard --source hf` (`responsible-ai-labs/rail-guard-benchmark`) | `$0.00` local GPU (512 real HF cases): **Pool A `95.0% F1` (`90.5%` adv catch, `0.0%` benign FPR on `Kev-4B`)** · **Full Pool B (`392/392` on `GLiDE-9B`): `94.6%` unsafe intercept, `89.9%` GAP caught, `70.7%` safe not hard-blocked** ([full per-domain write-up](https://radeksixi.github.io/laya-as-judge-1-1-pypi-rail-guard-fastmcp-langgraph/)) |
 
 ```python
 # 5-line FastMCP tool guard + LangGraph conditional-edge router (0 output tokens)
@@ -66,8 +68,8 @@ Software rarely needs an autoregressive LLM writing 250 tokens of prose just to 
 | **Enterprise Governance & Zero Lock-In** | 100% air-gapped local option, JSON `audit_trace`, Apache-2.0, operational endpoints (`GET /health`, `/v1/models`, `/v1/profiles`) | Maps cleanly to **EU AI Act** Art. 12/14 logging & oversight, **DORA / NIS2**, **GDPR/RODO**, and [**Sixi Assure**](https://sixi.ai/en/assure/) |
 
 ```bash
-# Try all 3 API modes immediately with 0 GB VRAM (no downloads)
-pip install -e '.[server]'
+# Try all 3 API modes immediately with 0 GB VRAM (installed from PyPI, no model downloads)
+pip install "laya-as-judge[server]"
 laya-judge serve --profile emulator --port 8000
 
 # Or deploy 100% locally on 1x RTX 16GB ($0 cloud, 11.75 GB VRAM, 78.0% avg, 12/12 red-team)
@@ -385,28 +387,31 @@ flowchart LR
 
 ## Installation
 
+### From PyPI (Recommended)
+
 ```bash
-# Clone the repository
+# Core Python SDK, CLI (`laya-judge`), FastMCP & LangGraph integrations, and offline EmulatorBackend
+pip install laya-as-judge
+
+# With FastAPI + Uvicorn local HTTP server (`laya-judge serve`)
+pip install "laya-as-judge[server]"
+
+# Run the CLI without a permanent install (via uv)
+uvx --from laya-as-judge laya-judge demo
+
+# Optional neural & benchmark extras
+pip install "laya-as-judge[mlx]"         # Apple Silicon via laya-mlx
+pip install "laya-as-judge[laya]"        # Linux / NVIDIA CUDA / CPU upstream Laya runtime
+pip install "laya-as-judge[torch]"       # PyTorch / Transformers native DecisionModel backend
+pip install "laya-as-judge[benchmarks]"  # Hugging Face datasets for `laya-judge suite`
+```
+
+### From Source (Editable Development)
+
+```bash
 git clone https://github.com/radeksixi/laya-as-judge.git
 cd laya-as-judge
-
-# Basic installation: API, CLI and the heuristic EmulatorBackend (no model weights)
-pip install -e .
-
-# Real Laya inference on Apple Silicon via laya-mlx (downloads weights from Hugging Face):
-pip install -e '.[mlx]'
-
-# For Linux / NVIDIA CUDA / CPU acceleration with official upstream Laya runtime:
-pip install -e '.[laya]'
-
-# PyTorch / Transformers / Safetensors native DecisionModel backend:
-pip install -e '.[torch]'
-
-# Hugging Face benchmark datasets for `laya-judge suite`:
-pip install -e '.[benchmarks]'
-
-# Development (tests):
-pip install -e '.[dev]'
+pip install -e ".[dev,server]"
 pytest
 ```
 
