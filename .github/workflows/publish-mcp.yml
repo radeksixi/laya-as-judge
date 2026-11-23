@@ -1,0 +1,35 @@
+name: Publish to Official MCP Registry
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish-mcp:
+    name: Publish server.json to registry.modelcontextprotocol.io
+    runs-on: ubuntu-latest
+    env:
+      MCP_PUBLISHER_VERSION: v1.8.16
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download mcp-publisher ${{ env.MCP_PUBLISHER_VERSION }}
+        run: |
+          set -euo pipefail
+          archive="mcp-publisher_linux_amd64.tar.gz"
+          url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/${archive}"
+          curl --fail --location --silent --show-error --output "${archive}" "${url}"
+          tar xzf "${archive}" mcp-publisher
+          chmod +x ./mcp-publisher
+          ./mcp-publisher --version || true
+
+      - name: Authenticate via GitHub OIDC and publish to Official MCP Registry
+        run: |
+          set -euo pipefail
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
