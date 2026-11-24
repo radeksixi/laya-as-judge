@@ -3,69 +3,59 @@
 # Laya-as-a-Judge v1.2.0 ⚡⚖️
 
 [![PyPI](https://img.shields.io/pypi/v/laya-as-judge.svg?color=0ea5e9)](https://pypi.org/project/laya-as-judge/)
-[![Version](https://img.shields.io/badge/Release-v1.2.0_Stable-10b981.svg)](CHANGELOG.md)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
-[![HF Space](https://img.shields.io/badge/🤗_Live_Demo-Hugging_Face_Space-ffd21e.svg)](https://huggingface.co/spaces/rbai86/laya-as-judge-demo)
-[![Output Tokens](https://img.shields.io/badge/Output_Tokens-0-orange.svg)](#the-logic-behind-it-architecture--math)
-[![Local 16GB](https://img.shields.io/badge/Local_1x16GB_%240-78.7%25_avg-0ea5e9.svg)](#100-local-text-only-api-decision-judge--hybrid-the-judged-decision--v070)
-[![RAIL Guard](https://img.shields.io/badge/RAIL_Guard-95.0%25_F1_%7C_94.6%25_Tool_Intercept_(392%2F392)-10b981.svg)](#whats-new-in-v110-ecosystem-drop-ins-fastmcp--langgraph-decisionbench--rail-guard)
-[![Top-1 ECE](https://img.shields.io/badge/Top--1_ECE-0.0234--0.0287-0284c7.svg)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
+[![Release](https://img.shields.io/badge/Release-v1.2.0-10b981.svg)](CHANGELOG.md)
 [![CI](https://github.com/radeksixi/laya-as-judge/actions/workflows/ci.yml/badge.svg)](https://github.com/radeksixi/laya-as-judge/actions)
-[![Benchmarks](https://img.shields.io/badge/Laya--Omega_vs_Gemini_Dec_1-11%2F11_Wins-10b981.svg)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
-[![Ecosystem: sixi.ai](https://img.shields.io/badge/Used_with-sixi.ai_%2F_Assure-0ea5e9.svg)](https://sixi.ai/en/assure/)
+[![HF Space](https://img.shields.io/badge/🤗_Live_Demo-HF_Space-ffd21e.svg)](https://huggingface.co/spaces/rbai86/laya-as-judge-demo)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 [![Attack → Guard → Prove — Unified Open-Source AI Security & Governance Offering (sixi-scanner v1.2.0 + laya-as-judge v1.2.0)](assets/sixi-closed-loop-offering-dark.png)](https://radeksixi.github.io/closed-loop-redteam-guard-sixi-scanner-laya-1-2/)
 
-> **One open-source, zero-output-token Decision, Judge & Governance API — built for both solo developers (`$0` on a 6 GB edge or single 16 GB GPU) and air-gapped regulated enterprises (EU AI Act / DORA / NIS2 / [Sixi Assure](https://sixi.ai/en/assure/)).**
->
-> **Try live (CPU):** [🤗 Hugging Face Space Demo](https://huggingface.co/spaces/rbai86/laya-as-judge-demo) · **Install:** [`pip install laya-as-judge`](https://pypi.org/project/laya-as-judge/) · **Read the write-ups:** [v1.2.0 — Closed Attack → Guard → Prove Loop (`sixi-scanner` ↔ `laya-as-judge`)](https://radeksixi.github.io/closed-loop-redteam-guard-sixi-scanner-laya-1-2/) · [v1.1.0 — PyPI, 512 RAIL Guard Tests, FastMCP & LangGraph](https://radeksixi.github.io/laya-as-judge-1-1-pypi-rail-guard-fastmcp-langgraph/) · [v1.0.0 — Solo & Enterprise](https://radeksixi.github.io/laya-as-judge-1-0-decision-judge-governance-for-everyone-and-enterprise/)
+**Zero-output-token Decision, Judge & 4-way `ActionGate` API (`COMMIT / FALLBACK / ABSTAIN / BLOCK`)** — built for both solo `$0` local GPUs and air-gapped enterprise AI agents ([Sixi Assure](https://sixi.ai/en/assure/)).
+
+[Try live on HF Space](https://huggingface.co/spaces/rbai86/laya-as-judge-demo) · [PyPI (`pip install laya-as-judge`)](https://pypi.org/project/laya-as-judge/) · [v1.2.0 Closed-Loop Write-Up](https://radeksixi.github.io/closed-loop-redteam-guard-sixi-scanner-laya-1-2/) · [RAIL Guard Benchmarks](https://radeksixi.github.io/laya-as-judge-1-1-pypi-rail-guard-fastmcp-langgraph/)
+
+```bash
+# Install & run locally in 10 seconds (0 GB VRAM emulator or local GPU)
+pip install "laya-as-judge[server]"
+laya-judge serve --profile emulator --port 8000
+
+# Closed Attack -> Guard -> Prove loop with sixi-scanner v1.2.0
+sixi-scanner scan --url http://agent/v1/chat/completions --confirm-url http://127.0.0.1:8000/v1/judge --export-laya rules.json
+laya-judge verify-sixi rules.json
+```
+
+### Key Highlights (`v1.2.0`)
+
+- **Closed Red-Team Loop (`sixi-scanner` ↔ `laya-as-judge`):** `RedTeamVerdictJudge` (`judge="redteam"`, **0 output tokens**, `131.5 ms` CUDA) confirms breaks; `load_sixi_scanner_rules` / `verify-sixi` / `--rules-file` enforce them deterministically (**`0.29 ms`** guard overhead, **`1.00 ms`** DVMCP rug-pull block, `0/10` benign false blocks).
+- **Drop-In Agent Middleware & APIs:** 5-line **FastMCP** (`LayaToolGateMiddleware`) & **LangGraph** (`LayaJudgedGateNode`) gates, stdio MCP server (`uvx laya-as-judge mcp`), OpenAI `/v1/moderations`, Cohere/vLLM `/v1/rerank`, and GitHub Action.
+- **Measured Accuracy (`$0` local):** **95.0% F1** on RAIL Guard Pool A (`94.6%` Pool B intercept across `392/392`), **78.7%** on 1× 16 GB GPU (`12/12` red-team, `0% FP`), and **11/11** wins vs. Gemini Decision 1 on `Laya-Omega`.
+
+<details>
+<summary><strong>Executive summary (CTO / CISO / Engineering) &amp; full v1.2.0 / v1.1.0 release notes</strong></summary>
 
 ### Why CTOs, CISOs & AI Engineering Leads Deploy It
 
-- **For CISOs & AI Risk (Fail-Closed Tool-Call Firewall):** Air-gapped on-prem execution (`$0` cloud egress, FINMA / FADP / GDPR / DORA / EU AI Act ready), deterministic anti-spoofing & `sixi-scanner` regression rules (`0.29 ms` guard overhead, `1.00 ms` MCP rug-pull block), calibrated uncertainty (`ECE 0.029`, explicit `ABSTAIN`), and full JSON `audit_trace`.
+- **For CISOs & AI Risk (Fail-Closed Tool-Call Firewall):** Air-gapped on-prem execution (`$0` cloud egress, FINMA / FADP / GDPR / DORA / EU AI Act auditability), deterministic anti-spoofing & `sixi-scanner` regression rules (`0.29 ms` guard overhead, `1.00 ms` MCP rug-pull block), calibrated uncertainty (`ECE 0.029`, explicit `ABSTAIN`), and full JSON `audit_trace`.
 - **For CTOs & Platform Teams (Drop-In, Zero Lock-In):** Swap URLs without rewriting your stack — drop-in OpenAI `/v1/moderations`, Cohere/vLLM `/v1/rerank`, `/v1/decisions/batch` (`7.97×`), Prometheus `/metrics`, `6.7 ms` latency with `0` output tokens, Apache-2.0.
 - **For AI Engineering Leads (5-Line Agent Integration):** Native **FastMCP** (`LayaToolGateMiddleware`) and **LangGraph** (`LayaJudgedGateNode`) middleware, stdio MCP server (`uvx laya-as-judge mcp`), A2A v1.0 Agent Card, GitHub Action, and a zero-setup browser demo on [Hugging Face Space](https://huggingface.co/spaces/rbai86/laya-as-judge-demo).
 
----
-
-## What's New in `v1.2.0` (Closed Attack → Guard → Prove Loop with `sixi-scanner`)
-
-Pair [`laya-as-judge`](https://pypi.org/project/laya-as-judge/) with [`sixi-scanner v1.2.0`](https://github.com/radeksixi/sixi-scanner) to close red-team findings automatically in CI — **zero output tokens, zero cloud judge bills**:
+### `v1.2.0` Closed-Loop Details
 
 | Addition | Interface / CLI | Live Measured Proof (`$0.00` Local GPU) |
 |---|---|---|
-| **`RedTeamVerdictJudge` Preset** | `POST /v1/judge` (`judge="redteam"`) · `RedTeamVerdictJudge` | 3 orthogonal typed criteria (`violation_confirmed`, `is_benign_refusal`, `severity`), **`0` output tokens**, **`131.5 ms`** avg on CUDA `Laya` — explicitly separates polite refusals from real breaks |
-| **Deterministic Guard Loader** | `load_sixi_scanner_rules("guard-rules.json")` · `laya-judge serve --rules-file` | Loads `sixi-scanner --export-laya` packs into `JudgedDecisionEngine`, FastMCP `LayaToolGateMiddleware`, & LangGraph `LayaJudgedGateNode` (**`0.29 ms`** check overhead, **`0/10`** benign false blocks) |
-| **CI Regression Verifier** | `laya-judge verify-sixi guard-rules.json` · `pack.verify_regression(...)` | Live `Qwen3.8-27B` (45 probes): **`2/2` findings closed (`still_open=0`)** on `sixi-scanner diff`; live DVMCP C04 rug-pull (`get_weather`): blocked in **`1.00 ms`** (`ActionGate.BLOCK`) while clean `get_system_time` commits (`ActionGate.COMMIT`) |
+| **`RedTeamVerdictJudge` Preset** | `POST /v1/judge` (`judge="redteam"`) · `RedTeamVerdictJudge` | 3 orthogonal typed criteria (`violation_confirmed`, `is_benign_refusal`, `severity`), **`0` output tokens**, **`131.5 ms`** avg on CUDA `Laya` |
+| **Deterministic Guard Loader** | `load_sixi_scanner_rules("rules.json")` · `laya-judge serve --rules-file` | Loads `sixi-scanner --export-laya` packs into `JudgedDecisionEngine`, FastMCP & LangGraph (**`0.29 ms`** overhead, **`0/10`** false blocks) |
+| **CI Regression Verifier** | `laya-judge verify-sixi rules.json` · `pack.verify_regression(...)` | Live `Qwen3.8-27B` (45 probes): **`2/2` fixed (`still_open=0`)** on `sixi-scanner diff`; DVMCP C04 rug-pull blocked in **`1.00 ms`** |
 
-```bash
-# 1. ATTACK: scan target, confirm with zero-token RedTeamVerdictJudge, export guard rules
-laya-judge serve --profile rtx-16gb --port 8000
-sixi-scanner scan --url http://agent/v1/chat/completions --stateful --context agent.json \
-  --confirm-url http://127.0.0.1:8000/v1/judge --out baseline.json --export-laya guard-rules.json
-
-# 2. GUARD: verify closure in CI & load rules into Laya server / FastMCP / LangGraph
-laya-judge verify-sixi guard-rules.json
-laya-judge serve --profile rtx-16gb --rules-file guard-rules.json --port 8000
-
-# 3. PROVE: re-scan guarded agent and diff honestly
-sixi-scanner scan --url http://agent/v1/chat/completions --stateful --out after.json
-sixi-scanner diff baseline.json after.json
-```
-
----
-
-## What's New in `v1.1.0` (PyPI, Ecosystem Drop-Ins, FastMCP & LangGraph, DecisionBench & RAIL Guard)
+### `v1.1.0` / `v1.1.1` Ecosystem Details
 
 | Addition | Interface / Endpoint | Measured Highlight |
 |---|---|---|
 | **PyPI & Zero-Setup HF Space** | [`pip install laya-as-judge`](https://pypi.org/project/laya-as-judge/) · [`rbai86/laya-as-judge-demo`](https://huggingface.co/spaces/rbai86/laya-as-judge-demo) | Official PyPI package (`[server]` extra, `uvx` ready) + zero-cold-start browser playground |
-| **OSS Ecosystem Drop-In APIs** | `POST /v1/decisions/batch`, `/v1/moderations` (OpenAI), `/v1/rerank` (Cohere/vLLM), `/v1/rank` (Best-of-N), `GET /metrics` (Prometheus), `get_engine("hf-decision")` | **`7.97×` batch speedup** (`32` items), **`6.7 ms`** `/v1/decisions` & **`18.2 ms`** `/v1/rank` on `Laya-Q8_0` (`+575 MiB` VRAM, `0` output tokens) |
-| **FastMCP & LangGraph Middleware** | `LayaToolGateMiddleware`, `@laya_tool_guard`, `make_decision_router`, `LayaJudgedGateNode`, `laya_gate_router` | Zero-bloat duck-typed integrations wiring 4-way `COMMIT / FALLBACK / ABSTAIN / BLOCK` into MCP tools & `StateGraph` nodes in 5 lines |
-| **DecisionBench Native Runner** | `laya-judge decision-bench` · `examples/decisionbench_laya_adapter.py` | 100% native `jev-compatible-systemone-http-v1` parity across `noul`, `choice`, `score` for [`Hanno-Labs/decision-bench`](https://github.com/Hanno-Labs/decision-bench) (`run-system-one-http`) |
-| **RAIL Guard Benchmark Harness** | `laya-judge rail-guard --source hf` (`responsible-ai-labs/rail-guard-benchmark`) | `$0.00` local GPU (512 real HF cases): **Pool A `95.0% F1` (`90.5%` adv catch, `0.0%` benign FPR on `Kev-4B`)** · **Full Pool B (`392/392` on `GLiDE-9B`): `94.6%` unsafe intercept, `89.9%` GAP caught, `70.7%` safe not hard-blocked** ([full per-domain write-up](https://radeksixi.github.io/laya-as-judge-1-1-pypi-rail-guard-fastmcp-langgraph/)) |
-| **MCP Stdio Server, A2A v1.0 & GitHub Action (`v1.1.1`)** | `uvx laya-as-judge mcp` (`server.json`) · `GET /.well-known/agent-card.json` & `POST /a2a/v1` · `uses: radeksixi/laya-as-judge@v1.1.1` (`action.yml`) | 5 native MCP tools (`laya_decide`, `laya_judge`, `laya_judged_decision`, `laya_moderate`, `laya_rerank`), A2A v1.0 Agent Card, and native CI gate (`--gate-judgement`, `--max-failing`, `--format sarif`) |
+| **OSS Ecosystem Drop-In APIs** | `/v1/decisions/batch`, `/v1/moderations`, `/v1/rerank`, `/v1/rank`, `/metrics` | **`7.97×` batch speedup** (`32` items), **`6.7 ms`** `/v1/decisions` & **`18.2 ms`** `/v1/rank` on `Laya-Q8_0` |
+| **FastMCP & LangGraph Middleware** | `LayaToolGateMiddleware`, `@laya_tool_guard`, `make_decision_router`, `LayaJudgedGateNode` | Zero-bloat duck-typed integrations wiring 4-way `COMMIT / FALLBACK / ABSTAIN / BLOCK` in 5 lines |
+| **DecisionBench & RAIL Guard** | `laya-judge decision-bench` · `laya-judge rail-guard --source hf` | **Pool A `95.0% F1`** (`0.0%` benign FPR) · **Full Pool B (`392/392`): `94.6%` unsafe intercept** |
+| **MCP Stdio, A2A v1.0 & GH Action** | `uvx laya-as-judge mcp` · `/.well-known/agent-card.json` · `action.yml` | 5 native MCP tools, A2A v1.0 Agent Card, and native CI SARIF gate |
 
 ```python
 # 5-line FastMCP tool guard + LangGraph conditional-edge router (0 output tokens)
@@ -78,17 +68,15 @@ graph.add_node("governance_gate", LayaJudgedGateNode(engine))
 graph.add_conditional_edges("governance_gate", laya_gate_router)  # commit / fallback / abstain / block
 ```
 
+</details>
+
 ---
 
 ## What Laya-as-a-Judge Offers (API & Core Features)
 
-<<<<<<< HEAD
-Software rarely needs an autoregressive LLM writing 250 tokens of prose just to route a ticket, block a prompt injection, score RAG faithfulness, or approve a tool call. **`laya-as-judge v1.2.0`** ships a **Python SDK**, **CLI (`laya-judge`)**, **MCP stdio server (`uvx laya-as-judge mcp`)**, **GitHub Action**, and **FastAPI HTTP server (`laya-judge serve`)** exposing **three unified, zero-output-token modes** plus drop-in ecosystem endpoints:
-=======
 ![Laya-as-a-Judge Platform Architecture — Decision API, Judge API, and Hybrid The Judged Decision](assets/laya-v1-platform-hero.png)
 
-Software rarely needs an autoregressive LLM writing 250 tokens of prose just to route a ticket, block a prompt injection, score RAG faithfulness, or approve a tool call. **`laya-as-judge v1.0.0`** ships a **Python SDK**, **CLI (`laya-judge`)**, and **FastAPI HTTP server (`laya-judge serve`)** exposing **three unified, zero-output-token modes**:
->>>>>>> 02629c5 (docs: add unified dark-style Attack -> Guard -> Prove offering hero graphic to README)
+Software rarely needs an autoregressive LLM writing 250 tokens of prose just to route a ticket, block a prompt injection, score RAG faithfulness, or approve a tool call. **`laya-as-judge v1.2.0`** ships a **Python SDK**, **CLI (`laya-judge`)**, **MCP stdio server (`uvx laya-as-judge mcp`)**, **GitHub Action**, and **FastAPI HTTP server (`laya-judge serve`)** exposing **three unified, zero-output-token modes** plus drop-in ecosystem endpoints:
 
 ### 1. Three Unified API Modes
 
