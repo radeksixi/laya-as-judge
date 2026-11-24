@@ -15,7 +15,7 @@
 [![Benchmarks](https://img.shields.io/badge/Laya--Omega_vs_Gemini_Dec_1-11%2F11_Wins-10b981.svg)](#decision-benchmark-suite-9-benchmark-table-top-1-ece--total-price)
 [![Ecosystem: sixi.ai](https://img.shields.io/badge/Used_with-sixi.ai_%2F_Assure-0ea5e9.svg)](https://sixi.ai/en/assure/)
 
-![Laya-as-a-Judge v1.2.0 Platform Architecture — Decision API, Judge API, and Hybrid The Judged Decision](assets/laya-v1-platform-hero.png)
+[![Attack → Guard → Prove — Unified Open-Source AI Security & Governance Offering (sixi-scanner v1.2.0 + laya-as-judge v1.2.0)](assets/sixi-closed-loop-offering-dark.png)](https://radeksixi.github.io/closed-loop-redteam-guard-sixi-scanner-laya-1-2/)
 
 > **One open-source, zero-output-token Decision, Judge & Governance API — built for both solo developers (`$0` on a 6 GB edge or single 16 GB GPU) and air-gapped regulated enterprises (EU AI Act / DORA / NIS2 / [Sixi Assure](https://sixi.ai/en/assure/)).**
 >
@@ -82,7 +82,13 @@ graph.add_conditional_edges("governance_gate", laya_gate_router)  # commit / fal
 
 ## What Laya-as-a-Judge Offers (API & Core Features)
 
+<<<<<<< HEAD
 Software rarely needs an autoregressive LLM writing 250 tokens of prose just to route a ticket, block a prompt injection, score RAG faithfulness, or approve a tool call. **`laya-as-judge v1.2.0`** ships a **Python SDK**, **CLI (`laya-judge`)**, **MCP stdio server (`uvx laya-as-judge mcp`)**, **GitHub Action**, and **FastAPI HTTP server (`laya-judge serve`)** exposing **three unified, zero-output-token modes** plus drop-in ecosystem endpoints:
+=======
+![Laya-as-a-Judge Platform Architecture — Decision API, Judge API, and Hybrid The Judged Decision](assets/laya-v1-platform-hero.png)
+
+Software rarely needs an autoregressive LLM writing 250 tokens of prose just to route a ticket, block a prompt injection, score RAG faithfulness, or approve a tool call. **`laya-as-judge v1.0.0`** ships a **Python SDK**, **CLI (`laya-judge`)**, and **FastAPI HTTP server (`laya-judge serve`)** exposing **three unified, zero-output-token modes**:
+>>>>>>> 02629c5 (docs: add unified dark-style Attack -> Guard -> Prove offering hero graphic to README)
 
 ### 1. Three Unified API Modes
 
